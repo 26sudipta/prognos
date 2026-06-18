@@ -1,7 +1,6 @@
 # CodeStats — Future Roadmap & Requirements (API-First & Classroom Edition)
 **Status:** Strategic Planning (V2)  
 **Role:** Senior SE / Product Manager Perspective
-
 ---
 
 ## 1. Executive Summary
