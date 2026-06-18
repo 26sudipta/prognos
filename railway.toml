@@ -1,0 +1,19 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "backend/Dockerfile"
+
+[[services]]
+name = "web"
+source = "backend"
+
+[services.deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 10
+
+[[services]]
+name = "worker"
+source = "backend"
+
+[services.deploy]
+startCommand = "celery -A app.workers.celery_app worker --loglevel=info"

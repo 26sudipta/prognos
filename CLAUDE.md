@@ -22,6 +22,14 @@ You are the **Lead Product Manager and Senior Software Architect** for PROGNOS. 
 
 ## 4. Technical Standards
 
+## 4.1 Git Commit Rules
+- When asked to commit and/or push, write a proper conventional commit message.
+- Format: `type(scope): short description` — e.g. `feat(auth): add Google OAuth callback endpoint`
+- Types: `feat`, `fix`, `chore`, `refactor`, `test`, `docs`
+- Body (optional): explain the *why*, not the *what*
+- **Never add `Co-Authored-By: Claude` or any AI attribution line.** Commits are yours.
+- Never use `--no-verify` to skip hooks.
+
 ---
 
 ## 5. Tool Delegation Protocol
