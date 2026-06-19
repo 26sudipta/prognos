@@ -14,3 +14,5 @@ frontend/.env
 # General
 .DS_Store
 *.log
+CLAUDE.md
+
