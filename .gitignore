@@ -15,4 +15,5 @@ frontend/.env
 .DS_Store
 *.log
 CLAUDE.md
+.agents/
 

@@ -50,7 +50,31 @@
 - `users → refresh_tokens` FK uses `ON DELETE CASCADE` to avoid orphaned tokens on hard-delete
 - `refresh_tokens.user_id` has an explicit index (`idx_refresh_tokens_user_id`) for `logout-all` queries
 - `User.refresh_tokens` relationship uses `lazy="noload"` — tokens are never needed eagerly
-### 1.3 Google OAuth + JWT Backend [TODO]
+### 1.3 Google OAuth + JWT Backend [DONE]
+**Completed:** 2026-06-20
+
+**What was built:**
+- `backend/app/schemas/auth.py` — `TokenResponse` Pydantic schema
+- `backend/app/schemas/user.py` — `UserMe` Pydantic schema
+- `backend/app/services/auth.py` — all auth business logic (upsert user, create/rotate/revoke tokens)
+- `backend/app/api/v1/deps.py` — `get_current_user` FastAPI dependency (Bearer token → User)
+- `backend/app/api/v1/routes/auth.py` — 5 auth endpoints
+- `backend/app/api/v1/routes/users.py` — `GET /users/me`
+- `backend/app/api/v1/__init__.py` — wired auth + users routers
+
+**Endpoints live:**
+- `GET  /api/v1/auth/google` — redirect to Google consent
+- `GET  /api/v1/auth/google/callback` — exchange code, upsert user, issue tokens
+- `POST /api/v1/auth/refresh` — rotate refresh token, return new access JWT
+- `POST /api/v1/auth/logout` — revoke current token, clear cookie
+- `POST /api/v1/auth/logout-all` — revoke all tokens for user
+- `GET  /api/v1/users/me` — return current user profile
+
+**Technical decisions:**
+- Google ID token decoded with `python-jose` (no `verify_signature`) — safe because token was received directly from Google's token endpoint over HTTPS
+- Access token returned as query param on redirect (`/auth/callback?token=...`) — only way frontend can receive it from a browser redirect
+- Refresh cookie scoped to `path=/api/v1/auth` — cookie only sent on auth routes, not every API request
+- `get_current_user` dependency checks `is_active=True` — soft-deleted users cannot authenticate
 ### 1.4 Auth Frontend [TODO]
 ### 1.5 Database: Handle Table [TODO]
 ### 1.6 Handle Verification Backend [TODO]
