@@ -75,7 +75,27 @@
 - Access token returned as query param on redirect (`/auth/callback?token=...`) — only way frontend can receive it from a browser redirect
 - Refresh cookie scoped to `path=/api/v1/auth` — cookie only sent on auth routes, not every API request
 - `get_current_user` dependency checks `is_active=True` — soft-deleted users cannot authenticate
-### 1.4 Auth Frontend [TODO]
+### 1.4 Auth Frontend [DONE]
+**Completed:** 2026-06-20
+
+**What was built:**
+- `frontend/app/globals.css` — full design token system (Tailwind v4 @theme, dark palette, shimmer skeleton, flame pulse animation)
+- `frontend/app/layout.tsx` — root layout with Inter + JetBrains Mono fonts, AuthProvider wrapper
+- `frontend/app/_lib/api.ts` — fetch wrapper: attaches Bearer token, auto-refreshes on 401 (deduplicated), retries original request
+- `frontend/app/_components/auth-provider.tsx` — React context: token in memory, user profile, session restore on mount via refresh cookie
+- `frontend/app/_components/sidebar.tsx` — collapsible sidebar with nav, user avatar, logout button
+- `frontend/app/(auth)/login/page.tsx` — full-screen login page, "Continue with Google" button
+- `frontend/app/(auth)/callback/page.tsx` — reads ?token= from URL, stores in context, cleans URL, redirects to /dashboard
+- `frontend/app/(dashboard)/layout.tsx` — protected layout: checks auth, shows loading spinner, redirects to /login if no token
+- `frontend/app/(dashboard)/dashboard/page.tsx` — placeholder dashboard with welcome message
+- `frontend/app/page.tsx` — redirects / → /dashboard
+
+**Technical decisions:**
+- Token stored in React state (memory), never localStorage — XSS cannot read it
+- Session restore on mount via `POST /auth/refresh` with httpOnly cookie — users stay logged in across page refreshes
+- `useSearchParams()` wrapped in `<Suspense>` on callback page — required by Next.js 16 for static export
+- API client uses deduplication for concurrent 401s — only one refresh call fires even if multiple requests fail simultaneously
+- Packages added: `framer-motion`, `lucide-react`
 ### 1.5 Database: Handle Table [TODO]
 ### 1.6 Handle Verification Backend [TODO]
 ### 1.7 Handle Verification Frontend [TODO]
