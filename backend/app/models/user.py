@@ -24,3 +24,6 @@ class User(TimestampMixin, Base):
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         "RefreshToken", back_populates="user", lazy="noload"
     )
+    handles: Mapped[list["UserHandle"]] = relationship(
+        "UserHandle", back_populates="user", lazy="noload"
+    )
