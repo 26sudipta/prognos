@@ -96,7 +96,23 @@
 - `useSearchParams()` wrapped in `<Suspense>` on callback page — required by Next.js 16 for static export
 - API client uses deduplication for concurrent 401s — only one refresh call fires even if multiple requests fail simultaneously
 - Packages added: `framer-motion`, `lucide-react`
-### 1.5 Database: Handle Table [TODO]
+### 1.5 Database: Handle Table [DONE]
+
+**Files created/modified:**
+- `backend/app/models/user_handle.py` — `UserHandle` model with `HandlePlatform`, `HandleStatus`, `HandleSyncStatus` enums
+- `backend/alembic/versions/002_add_user_handles.py` — migration creating table + 3 PG enum types + 2 indexes
+- `backend/app/models/user.py` — added `handles` relationship
+- `backend/app/models/__init__.py` — exported `UserHandle`
+- `backend/tests/conftest.py` — async DB session + test_user fixture
+- `backend/tests/unit/test_user_handle_model.py` — enum values + model instantiation
+- `backend/tests/integration/test_user_handle_constraints.py` — partial unique index behavior
+
+**Technical decisions:**
+- `UNIQUE(user_id, platform, is_active)` as written in requirement.md would block multiple soft-deleted rows for the same user+platform. Implemented as partial unique index `UNIQUE (user_id, platform) WHERE is_active = true` instead.
+- `sa.Enum(..., values_callable=lambda x: [e.value for e in x])` required on all three enum columns to store lowercase values (`.value`) instead of Python enum names (`.name`).
+- Enum types created by SA inside `op.create_table()` (not via `op.execute()`); manual `op.execute()` caused double-creation because `env.py` imports `app.models` and SA fired DDL listeners from both paths.
+- pytest + pytest-asyncio added as dev dependencies (`uv add --dev`).
+
 ### 1.6 Handle Verification Backend [TODO]
 ### 1.7 Handle Verification Frontend [TODO]
 
