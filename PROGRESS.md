@@ -113,7 +113,25 @@
 - Enum types created by SA inside `op.create_table()` (not via `op.execute()`); manual `op.execute()` caused double-creation because `env.py` imports `app.models` and SA fired DDL listeners from both paths.
 - pytest + pytest-asyncio added as dev dependencies (`uv add --dev`).
 
-### 1.6 Handle Verification Backend [TODO]
+### 1.6 Handle Verification Backend [DONE]
+**Completed:** 2026-06-22
+
+**Files created/modified:**
+- `backend/app/schemas/handle.py` — `HandleInitiateRequest/Response`, `HandleConfirmRequest`, `HandleVerifiedResponse`, `HandleResponse`
+- `backend/app/services/handle.py` — `initiate_verification`, `confirm_verification`, `list_handles`, `unlink_handle`, `fetch_cf_user`, `generate_verification_token`
+- `backend/app/api/v1/routes/handles.py` — 4 route handlers
+- `backend/app/api/v1/__init__.py` — wired handles router
+- `backend/tests/unit/test_handle_service.py` — 9 unit tests (respx mocked CF API)
+- `backend/tests/integration/test_handle_routes.py` — 6 integration tests (real DB, respx mocked CF API)
+
+**Technical decisions:**
+- Token format `PGS-XXXXXX` where X is uppercase hex (6 chars). Hex-only avoids ambiguous characters; `PGS-` prefix is visually distinct in a CF profile.
+- Token stored in `user_handles.verification_token`; CF `lastName` field used as the writable proof field (resolved from spec OQ-01).
+- Re-initiate updates the existing unverified row in-place (resets token + attempts); does NOT create a duplicate (partial unique index would reject it anyway).
+- Lockout check runs before expiry check — a locked handle is blocked regardless of token expiry state.
+- `respx` added as dev dependency for mocking `httpx.AsyncClient` in tests without patching.
+- 400 response for token mismatch returns structured `{"message": ..., "attempts_remaining": N}` so frontend can display remaining attempts.
+
 ### 1.7 Handle Verification Frontend [TODO]
 
 ---
