@@ -243,7 +243,29 @@
 - `/recommendations` returns `null` (not `[]`) for no-data: communicates "sync hasn't run yet" vs. "exists but empty".
 - `recommendations` child list loaded via `selectin` (ORM relationship), sorted in-memory by `position` — avoids modifying relationship declaration just for ordering.
 - All 66 tests passing.
-### 2.4 Dashboard UI [TODO]
+### 2.4 Dashboard UI [DONE]
+**Completed:** 2026-06-23
+
+**Files created/modified:**
+- `frontend/app/_lib/analytics.ts` — types + 5 typed fetch functions for all analytics endpoints
+- `frontend/app/(dashboard)/dashboard/page.tsx` — orchestrator: parallel fetches, independent loading states, no-handle detection
+- `frontend/app/(dashboard)/dashboard/_components/stat-strip.tsx` — 4 stat cards; CF rating in Codeforces color ladder; `.animate-flame` on current streak
+- `frontend/app/(dashboard)/dashboard/_components/activity-heatmap.tsx` — 52×7 GitHub-style heatmap; 5-level intensity scale; hover tooltip
+- `frontend/app/(dashboard)/dashboard/_components/rating-chart.tsx` — Recharts LineChart; Y-axis clamped to [min−50, max+50]; custom tooltip with contest name + delta + rank
+- `frontend/app/(dashboard)/dashboard/_components/tag-stats.tsx` — horizontal bar list; top 15 tags; relative bar width vs. max solved_count
+- `frontend/app/(dashboard)/dashboard/_components/weakness-cards.tsx` — per-signal cards; color-coded by type (danger/warning/accent); API score-DESC ordering preserved
+- `frontend/app/(dashboard)/dashboard/_components/recommendations.tsx` — problem list; difficulty badge in CF color ladder; null state ("Sync hasn't run yet.") with CTA to /handles
+- `docs/phase_2_4.md` — phase documentation
+
+**Technical decisions:**
+- 5 independent `useState` variables (not a single `Promise.all`) so each section loads independently — stat cards appear before the slow recommendations endpoint resolves.
+- `undefined | null | T` sentinel pattern: `undefined` = loading, `null` = loaded-but-empty, `T` = has data. Eliminates companion `isLoading` booleans.
+- No-handle detection: `heatmap.length === 0 && total_solved === 0 && cf_rating === null` → shows nudge card instead of six empty sections.
+- Heatmap cell: `w-3.5 h-3.5` (14px) + `gap-[3px]` → 52×17−3 = 881px + 32px labels = 913px, fits 992px usable width at 1280px viewport.
+- Rating chart Y-axis: manual `domain={[min−50, max+50]}` — avoids Recharts auto-scale producing unintuitive non-round tick values.
+- CF color ladder intentionally duplicated in stat-strip + recommendations (2 call sites) rather than extracted — no premature util abstraction.
+- `recharts ^3.8.1` added as a dependency.
+- All TypeScript clean (0 errors); production build passes.
 
 ## Phase 3 — Contest Discovery [TODO]
 ## Phase 4 — Classroom System [TODO]
