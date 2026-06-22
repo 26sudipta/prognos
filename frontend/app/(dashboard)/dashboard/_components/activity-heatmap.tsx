@@ -141,7 +141,7 @@ export function ActivityHeatmap({ data }: Props) {
             style={{ left: tip.x, top: tip.y - 60 }}
           >
             <span className="font-mono text-text-primary">{tip.count}</span>
-            <span className="text-text-muted ml-1">submissions</span>
+            <span className="text-text-muted ml-1">solved</span>
             <div className="text-text-muted mt-0.5">
               {new Date(tip.date + "T12:00:00").toLocaleDateString("en", {
                 month: "long",

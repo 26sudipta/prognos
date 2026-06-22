@@ -17,6 +17,7 @@ class DashboardResponse(BaseModel):
     longest_streak: int
     total_solved: int
     cf_rating: int | None
+    has_verified_handle: bool
 
 
 class TagStatsResponse(BaseModel):

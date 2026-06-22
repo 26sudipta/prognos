@@ -17,6 +17,7 @@ from app.services.analytics import (
     get_recommendations,
     get_tag_stats,
     get_weaknesses,
+    refresh_recommendations,
 )
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -60,3 +61,11 @@ async def recommendations(
     current_user: User = Depends(get_current_user),
 ) -> RecommendationSetResponse | None:
     return await get_recommendations(db, current_user.id)
+
+
+@router.post("/recommendations/refresh", response_model=RecommendationSetResponse | None)
+async def recommendations_refresh(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RecommendationSetResponse | None:
+    return await refresh_recommendations(db, current_user.id)

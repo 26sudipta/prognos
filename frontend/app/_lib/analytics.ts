@@ -11,6 +11,7 @@ export interface DashboardData {
   longest_streak: number;
   total_solved: number;
   cf_rating: number | null;
+  has_verified_handle: boolean;
 }
 
 export interface TagStat {
@@ -86,5 +87,14 @@ export async function fetchWeaknesses(token: string): Promise<WeaknessSignal[]> 
 export async function fetchRecommendations(token: string): Promise<RecommendationSet | null> {
   const res = await apiFetch("/api/v1/analytics/recommendations", { token });
   if (!res.ok) throw new Error("fetch recommendations failed");
+  return res.json();
+}
+
+export async function refreshRecommendations(token: string): Promise<RecommendationSet | null> {
+  const res = await apiFetch("/api/v1/analytics/recommendations/refresh", {
+    token,
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("refresh recommendations failed");
   return res.json();
 }

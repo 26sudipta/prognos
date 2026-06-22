@@ -297,7 +297,7 @@ async def _upsert_rating_history(
                 delta=entry["newRating"] - entry["oldRating"],
                 rank=entry["rank"],
                 contest_time=datetime.fromtimestamp(entry["ratingUpdateTimeSeconds"], tz=UTC),
-            ).on_conflict_do_nothing()
+            ).on_conflict_do_nothing(index_elements=["user_handle_id", "cf_contest_id"])
         )
     await session.commit()
 
@@ -449,7 +449,8 @@ def _pick_problem(
     expand: bool,
 ) -> dict | None:
     band = 200 if expand else 100
-    low, high = rating - band, rating + (band * 3)
+    low = max(800, rating - band)
+    high = min(3500, rating + (band * 3))
     for p in problems:
         if tag not in p.get("tags", []):
             continue

@@ -33,7 +33,8 @@ def _compute_streaks(date_to_solved: dict[date, int]) -> tuple[int, int]:
     today = date.today()
 
     current = 0
-    d = today
+    # Grace day: if today has no activity yet, start counting from yesterday
+    d = today if date_to_solved.get(today, 0) > 0 else today - timedelta(days=1)
     while date_to_solved.get(d, 0) > 0:
         current += 1
         d -= timedelta(days=1)
@@ -65,6 +66,7 @@ async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardRespon
             longest_streak=0,
             total_solved=0,
             cf_rating=None,
+            has_verified_handle=False,
         )
 
     # Fetch all daily_activity rows across all handles (all time)
@@ -107,6 +109,7 @@ async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardRespon
         longest_streak=longest_streak,
         total_solved=total_solved,
         cf_rating=rating_row,
+        has_verified_handle=True,
     )
 
 
@@ -156,6 +159,20 @@ async def get_weaknesses(db: AsyncSession, user_id: uuid.UUID) -> list[WeaknessS
     ).scalars().all()
 
     return [WeaknessSignalResponse.model_validate(r) for r in rows]
+
+
+async def refresh_recommendations(db: AsyncSession, user_id: uuid.UUID) -> RecommendationSetResponse | None:
+    from app.workers.cf_sync import _compute_weakness_signals, _generate_recommendations
+
+    handle_ids = await _get_handle_ids(db, user_id)
+    if not handle_ids:
+        return None
+
+    for handle_id in handle_ids:
+        await _compute_weakness_signals(handle_id, db)
+
+    await _generate_recommendations(handle_ids[0], user_id, db)
+    return await get_recommendations(db, user_id)
 
 
 async def get_recommendations(db: AsyncSession, user_id: uuid.UUID) -> RecommendationSetResponse | None:

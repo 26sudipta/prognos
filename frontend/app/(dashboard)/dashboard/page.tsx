@@ -32,10 +32,11 @@ const EMPTY_DASHBOARD: DashboardData = {
   longest_streak: 0,
   total_solved: 0,
   cf_rating: null,
+  has_verified_handle: true, // don't show nudge on fetch failure
 };
 
 function noHandleLinked(d: DashboardData): boolean {
-  return d.heatmap.length === 0 && d.total_solved === 0 && d.cf_rating === null;
+  return !d.has_verified_handle;
 }
 
 export default function DashboardPage() {

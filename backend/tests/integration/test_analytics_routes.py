@@ -133,16 +133,28 @@ def test_streak_consecutive_from_today():
     assert longest == 3
 
 
-def test_streak_broken_today():
+def test_streak_grace_day_yesterday_counts():
+    today = date.today()
+    data = {
+        today: 0,                        # no activity today yet
+        today - timedelta(days=1): 5,    # but yesterday had solves
+        today - timedelta(days=2): 5,
+    }
+    current, longest = _compute_streaks(data)
+    assert current == 2   # grace day: yesterday is the effective "today"
+    assert longest == 2
+
+
+def test_streak_grace_day_no_streak():
     today = date.today()
     data = {
         today: 0,
-        today - timedelta(days=1): 5,
+        today - timedelta(days=1): 0,   # yesterday also empty → no grace day
         today - timedelta(days=2): 5,
     }
     current, longest = _compute_streaks(data)
     assert current == 0
-    assert longest == 2
+    assert longest == 1
 
 
 def test_streak_gap_in_history():
@@ -171,6 +183,7 @@ async def test_dashboard_no_handle_returns_zeros(db_session: AsyncSession, test_
     assert result.longest_streak == 0
     assert result.total_solved == 0
     assert result.cf_rating is None
+    assert result.has_verified_handle is False
 
 
 # ---------------------------------------------------------------------------
