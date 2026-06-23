@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/contests",  label: "Contests",  icon: Calendar,       disabled: true },
-  { href: "/handles",   label: "Handles",   icon: Link2,          disabled: true },
+  { href: "/handles",   label: "Handles",   icon: Link2 },
   { href: "/classroom", label: "Classroom", icon: GraduationCap,  disabled: true },
 ];
 

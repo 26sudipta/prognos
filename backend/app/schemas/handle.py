@@ -35,10 +35,12 @@ class HandleResponse(BaseModel):
     handle: str
     platform: HandlePlatform
     is_verified: bool
+    is_locked: bool
     status: HandleStatus
     sync_status: HandleSyncStatus
     verified_at: datetime | None
     last_synced_at: datetime | None
+    lockout_expires_at: datetime | None
 
     model_config = {"from_attributes": True}
 

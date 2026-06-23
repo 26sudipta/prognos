@@ -112,6 +112,12 @@ async def initiate_verification(
     existing = result.scalar_one_or_none()
 
     if existing is not None:
+        # Block re-initiate while lockout is still active
+        if existing.is_locked and existing.lockout_expires_at and existing.lockout_expires_at > now:
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail="Handle is locked due to too many failed attempts. Try again after the lockout expires.",
+            )
         existing.handle = handle
         existing.verification_token = token
         existing.verification_token_expires_at = expires_at
