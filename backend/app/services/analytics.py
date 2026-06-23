@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import DailyActivity, RatingHistory, TagStats
 from app.models.signals import RecommendationSet, WeaknessSignal
-from app.models.user_handle import UserHandle
+from app.models.user_handle import HandleSyncStatus, UserHandle
 from app.schemas.analytics import (
     DashboardResponse,
     HeatmapDay,
@@ -67,7 +67,21 @@ async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardRespon
             total_solved=0,
             cf_rating=None,
             has_verified_handle=False,
+            is_syncing=False,
         )
+
+    # Determine if any handle has never completed a sync or is currently syncing
+    sync_row = (
+        await db.execute(
+            select(UserHandle.sync_status, UserHandle.last_synced_at)
+            .where(UserHandle.id.in_(handle_ids))
+            .limit(1)
+        )
+    ).first()
+    is_syncing = sync_row is not None and (
+        sync_row.sync_status == HandleSyncStatus.IN_PROGRESS
+        or sync_row.last_synced_at is None
+    )
 
     # Fetch all daily_activity rows across all handles (all time)
     rows = (
@@ -110,6 +124,7 @@ async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardRespon
         total_solved=total_solved,
         cf_rating=rating_row,
         has_verified_handle=True,
+        is_syncing=is_syncing,
     )
 
 

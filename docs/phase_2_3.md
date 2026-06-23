@@ -114,3 +114,50 @@ cd backend
 ## Next
 
 **Phase 2.4 — Dashboard UI**: Frontend components consuming all five analytics endpoints (dashboard, tags, rating history, weaknesses, recommendations). React charts (heatmap, rating graph), weakness cards, recommendation list.
+
+---
+
+## Updates
+
+### 2026-06-23 — QA Audit Fixes
+
+**Missing endpoint built: `POST /analytics/recommendations/refresh`**
+
+This endpoint was specified in `requirement.md §9.4` and `implementation.md §2.3` but never implemented. It regenerates weakness signals and the recommendation set on demand, without the 30-minute sync cooldown (since it only runs local computation, not a CF API fetch).
+
+```python
+# services/analytics.py
+async def refresh_recommendations(db, user_id):
+    from app.workers.cf_sync import _compute_weakness_signals, _generate_recommendations
+    handle_ids = await _get_handle_ids(db, user_id)
+    if not handle_ids: return None
+    for handle_id in handle_ids:
+        await _compute_weakness_signals(handle_id, db)
+    await _generate_recommendations(handle_ids[0], user_id, db)
+    return await get_recommendations(db, user_id)
+```
+
+Frontend: `refreshRecommendations(token)` added to `_lib/analytics.ts`.
+
+**Difficulty band clamped to [800, 3500]**
+
+`_pick_problem()` in `cf_sync.py` produced negative low bounds for low-rated users (e.g., rating 900, narrow band: `900 - 200 = 700 < 800`). CF problems don't exist below 800 or above 3500.
+
+```python
+# Before
+low, high = rating - band, rating + (band * 3)
+
+# After
+low  = max(800,  rating - band)
+high = min(3500, rating + (band * 3))
+```
+
+**DB unique constraints added (migration 004)**
+
+Two constraints required by the spec were missing from migration 003:
+- `rating_history`: `UNIQUE(user_handle_id, cf_contest_id)` (spec §8.9)
+- `weakness_signals`: `UNIQUE(user_handle_id, tag, signal_type)` (spec §8.10)
+
+Migration `004_add_missing_unique_constraints.py` adds both. The `on_conflict_do_nothing()` call in `_upsert_rating_history()` was also updated to include `index_elements=["user_handle_id", "cf_contest_id"]` — previously it was conflicting on PK only (new UUID each time = never actually conflicted).
+
+The delete-before-reinsert pattern in the sync pipeline prevented data integrity issues in practice; the migration adds the DB-level guarantee.

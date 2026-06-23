@@ -126,7 +126,35 @@ There are two distinct failure modes a `confirm` call can hit before even touchi
 
 The lockout check runs **before** the expiry check. Reason: a locked handle should be locked regardless of whether the token also happens to be expired. The user needs to wait out the lockout, then re-initiate to get a fresh token.
 
-Expiry does **not** count against the attempt limit (per the spec). If a user lets the 30-minute window lapse, they get a fresh 5 attempts with the new token.
+Expiry does **not** count against the attempt limit (per the spec). If a user lets the token window lapse, they get a fresh 5 attempts with the new token.
+
+---
+
+## Updates
+
+### 2026-06-23 — Verification field changed to Organization; token window extended
+
+**What changed:**
+
+| # | Before | After | Why |
+|---|---|---|---|
+| Proof field | `lastName` (CF API) | `organization` (CF API) | `lastName` is a real-name field users don't want overwritten. `organization` is a scratch field purpose-built for this. |
+| Fallbacks | none | `firstName`, `lastName` as silent fallbacks | Belt-and-suspenders; catches future CF settings renames. |
+| Token window | 30 minutes | **60 minutes** | Users who are new to CF settings need more time to find the field and navigate back. |
+| Comparison | `last_name == token` | `cf_org.strip() == token` | `.strip()` prevents CF from silently adding trailing whitespace causing a mismatch. |
+| Frontend URL | `codeforces.com/settings/general` | `codeforces.com/settings/social` | Last Name and Organization fields live in Social, not General. The wrong URL was the root cause of user confusion in testing. |
+
+**Files changed:**
+- `backend/app/services/handle.py` — `confirm_verification()` now reads `organization`; `.strip()` added; `TOKEN_EXPIRY_MINUTES` = 60
+- `frontend/app/(dashboard)/handles/page.tsx` — URL corrected; instructions updated to say "Organization field"
+
+**Live verification test (2026-06-23):**
+```
+CF API user.info → organization: "PGS-E7BC86"
+DB token         → "PGS-E7BC86"
+POST /handles/verify/confirm → 200 OK
+{ "handle": "sudiptadas", "verified_at": "..." }
+```
 
 ### 7. The 400 Response with Structured Error Detail
 

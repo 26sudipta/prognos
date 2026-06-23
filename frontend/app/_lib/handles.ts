@@ -97,3 +97,12 @@ export async function unlinkHandle(token: string, handleId: string): Promise<voi
   });
   if (!res.ok && res.status !== 204) throw new ApiError("Failed to unlink handle", res.status);
 }
+
+export async function syncHandle(token: string, handleId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/handles/${handleId}/sync`, {
+    method: "POST",
+    token,
+  });
+  // 429 = cooldown active, treat as ok (sync already running or recently ran)
+  if (!res.ok && res.status !== 429) throw new ApiError("Failed to start sync", res.status);
+}

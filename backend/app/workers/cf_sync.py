@@ -13,7 +13,6 @@ Pipeline (in order after fetching submissions):
 import asyncio
 import json
 import logging
-import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -169,7 +168,7 @@ async def _fetch_submissions(
                 break
 
             from_index += count
-            time.sleep(2)  # CF rate limit
+            await asyncio.sleep(2)  # CF rate limit
 
     if not new_submissions:
         return 0
@@ -465,18 +464,31 @@ def _pick_problem(
 
 
 async def _get_cf_problemset() -> list[dict]:
-    import redis.asyncio as aioredis
-
-    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    cached = await r.get(CF_PROBLEMSET_CACHE_KEY)
-    if cached:
-        await r.aclose()
-        return json.loads(cached)
+    # Try Redis cache (best-effort — degrades gracefully if Redis is unavailable)
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2)
+        try:
+            cached = await r.get(CF_PROBLEMSET_CACHE_KEY)
+            if cached:
+                return json.loads(cached)
+        finally:
+            await r.aclose()
+    except Exception:
+        pass
 
     async with httpx.AsyncClient() as client:
         data = await _cf_get(client, "problemset.problems")
-
     problems = data["result"]["problems"]
-    await r.set(CF_PROBLEMSET_CACHE_KEY, json.dumps(problems), ex=CF_PROBLEMSET_TTL)
-    await r.aclose()
+
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2)
+        try:
+            await r.set(CF_PROBLEMSET_CACHE_KEY, json.dumps(problems), ex=CF_PROBLEMSET_TTL)
+        finally:
+            await r.aclose()
+    except Exception:
+        pass
+
     return problems

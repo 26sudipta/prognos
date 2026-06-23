@@ -181,3 +181,45 @@ curl -H "Authorization: Bearer <token>" http://localhost:8000/api/v1/analytics/r
 ## Next
 
 **Phase 2.3** — Weakness + Recommendations Engine: expose `GET /api/v1/analytics/weaknesses` and `GET /api/v1/analytics/recommendations` from the `weakness_signals` and `recommendation_sets` tables computed by the sync worker.
+
+---
+
+## Updates
+
+### 2026-06-23 — QA Audit Fixes
+
+**Streak grace-day (requirement §D.2)**
+
+The original implementation set `d = today` as the streak starting point and returned `current_streak = 0` if today had no solved problems. PROGRESS.md recorded this as a deliberate decision ("honest streak semantics"), but it means a user's months-long streak resets to 0 at UTC midnight even if they solved problems yesterday evening.
+
+Fixed: `_compute_streaks()` now starts from yesterday when today has no activity.
+
+```python
+# Before
+d = today
+
+# After
+d = today if date_to_solved.get(today, 0) > 0 else today - timedelta(days=1)
+```
+
+The test `test_streak_broken_today` was encoding the wrong behavior as the expected result. It was replaced with two correct tests:
+- `test_streak_grace_day_yesterday_counts` — asserts `current == 2` when today=0, yesterday=5, day-2=5
+- `test_streak_grace_day_no_streak` — asserts `current == 0` when both today and yesterday are 0
+
+**`has_verified_handle` field added to `DashboardResponse`**
+
+The dashboard page used a proxy heuristic (`heatmap.length == 0 && total_solved == 0 && cf_rating == null`) to detect whether a handle was linked. This false-positives for a verified user who has submissions but no accepted solutions (all WA — heatmap empty, total_solved 0, cf_rating null if unrated). Such a user would see "Link your Codeforces handle" despite having a verified handle.
+
+Fixed: `DashboardResponse` now includes `has_verified_handle: bool` (True when the user has ≥1 verified active handle). `noHandleLinked()` on the frontend reads this field directly.
+
+```python
+# schemas/analytics.py — new field
+class DashboardResponse(BaseModel):
+    ...
+    has_verified_handle: bool
+
+# services/analytics.py — populated from handle query
+return DashboardResponse(..., has_verified_handle=bool(handle_ids))
+```
+
+**Test count:** 67 passed (was 66 — net +1 from streak test replacement).

@@ -12,6 +12,7 @@ export interface DashboardData {
   total_solved: number;
   cf_rating: number | null;
   has_verified_handle: boolean;
+  is_syncing: boolean;
 }
 
 export interface TagStat {

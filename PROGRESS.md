@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 1 — In Progress
-**Last Updated:** 2026-06-23
+## Current Status: Phase 2 — Complete. Phase 3 next.
+**Last Updated:** 2026-06-23 (Phase 2.6)
 
 ---
 
@@ -126,7 +126,7 @@
 
 **Technical decisions:**
 - Token format `PGS-XXXXXX` where X is uppercase hex (6 chars). Hex-only avoids ambiguous characters; `PGS-` prefix is visually distinct in a CF profile.
-- Token stored in `user_handles.verification_token`; CF `lastName` field used as the writable proof field (resolved from spec OQ-01).
+- Token stored in `user_handles.verification_token`; CF `organization` field used as the writable proof field (updated 2026-06-23 from original `lastName` — see Phase 1.6 Updates). `firstName` and `lastName` kept as silent fallbacks.
 - Re-initiate updates the existing unverified row in-place (resets token + attempts); does NOT create a duplicate (partial unique index would reject it anyway).
 - Lockout check runs before expiry check — a locked handle is blocked regardless of token expiry state.
 - `respx` added as dev dependency for mocking `httpx.AsyncClient` in tests without patching.
@@ -219,7 +219,7 @@
 
 **Technical decisions:**
 - Streaks computed at read time from `daily_activity` (≤1825 rows for 5 years) — no denormalized column needed; value is always accurate.
-- No grace-day logic: current_streak = 0 if today has 0 solved (honest streak semantics).
+- Grace-day logic: if today has 0 solved, streak counts from yesterday (requirement §D.2). Previous "no grace-day" decision reversed in Phase 2 QA audit.
 - Heatmap scoped to 365 days; total_solved and streaks are all-time — different scopes are intentional.
 - `cf_rating` derived from `rating_history.new_rating ORDER BY contest_time DESC LIMIT 1` — same source as sync worker.
 - No handle → graceful empty/zero response (not 404).
@@ -260,12 +260,65 @@
 **Technical decisions:**
 - 5 independent `useState` variables (not a single `Promise.all`) so each section loads independently — stat cards appear before the slow recommendations endpoint resolves.
 - `undefined | null | T` sentinel pattern: `undefined` = loading, `null` = loaded-but-empty, `T` = has data. Eliminates companion `isLoading` booleans.
-- No-handle detection: `heatmap.length === 0 && total_solved === 0 && cf_rating === null` → shows nudge card instead of six empty sections.
+- No-handle detection: reads `has_verified_handle` field from `DashboardResponse` directly (updated in QA audit — old proxy heuristic false-positived for verified users with all-WA submissions).
 - Heatmap cell: `w-3.5 h-3.5` (14px) + `gap-[3px]` → 52×17−3 = 881px + 32px labels = 913px, fits 992px usable width at 1280px viewport.
 - Rating chart Y-axis: manual `domain={[min−50, max+50]}` — avoids Recharts auto-scale producing unintuitive non-round tick values.
 - CF color ladder intentionally duplicated in stat-strip + recommendations (2 call sites) rather than extracted — no premature util abstraction.
 - `recharts ^3.8.1` added as a dependency.
 - All TypeScript clean (0 errors); production build passes.
+
+### 2.5 Phase 2 QA Audit [DONE]
+**Completed:** 2026-06-23
+
+Full audit of Phase 2 against `requirement.md` and `implementation.md`. All issues found and resolved in one session.
+
+**Fixes applied:**
+
+| Severity | Item | Fix |
+|---|---|---|
+| Critical | Streak grace-day missing | `_compute_streaks()` starts from yesterday when today has 0 solved |
+| High | `POST /analytics/recommendations/refresh` not built | Implemented in `services/analytics.py` + route |
+| High | `noHandleLinked()` false-positive (all-WA users) | `has_verified_handle: bool` added to `DashboardResponse` |
+| Medium | Heatmap tooltip said "submissions", value is `solved_count` | Label changed to "solved" |
+| Medium | `rating_history` missing unique constraint | Migration 004: `UNIQUE(user_handle_id, cf_contest_id)` |
+| Medium | `weakness_signals` missing unique constraint | Migration 004: `UNIQUE(user_handle_id, tag, signal_type)` |
+| Medium | `on_conflict_do_nothing()` had no `index_elements` | Added `index_elements=["user_handle_id", "cf_contest_id"]` |
+| Low | Difficulty band not clamped to [800, 3500] | `max(800, low)` / `min(3500, high)` in `_pick_problem()` |
+
+**Handle verification fixes (same session):**
+- Verification field: `lastName` → `organization` (users don't want their name overwritten)
+- Frontend URL corrected: `settings/general` → `settings/social`
+- Token expiry extended: 30 min → 60 min
+- Comparison uses `.strip()` to handle CF whitespace edge cases
+
+**Files changed:** 9 backend files, 4 frontend files, 1 new migration (004)
+**Test count:** 67 passed (was 66)
+**Run script:** `run.sh` added at repo root — kills ports 8000/3000, starts both servers, single Ctrl+C stops both.
+
+### 2.6 Dev Sync Fix & First-Sync UX [DONE]
+**Completed:** 2026-06-23
+
+**Root cause diagnosed:** Dashboard was always empty because the CF sync pipeline (Celery + Redis) is not started by `run.sh`. No sync had ever run, so all analytics tables (`daily_activity`, `tag_stats`, `rating_history`) were empty.
+
+**Files created/modified:**
+- `backend/app/workers/cf_sync.py` — `_get_cf_problemset()` degrades gracefully when Redis is unavailable (try/except on both read+write); `time.sleep(2)` → `await asyncio.sleep(2)` (blocking sleep freezes the FastAPI event loop when sync runs as a BackgroundTask)
+- `backend/app/api/v1/routes/handles.py` — `_enqueue_sync()` helper: tries Celery first, falls back to `FastAPI BackgroundTasks`; `confirm` endpoint now auto-triggers sync after verification; manual sync endpoint uses same helper
+- `backend/app/schemas/analytics.py` — `is_syncing: bool` added to `DashboardResponse`
+- `backend/app/services/analytics.py` — `get_dashboard()` sets `is_syncing=True` when `sync_status=IN_PROGRESS` or `last_synced_at IS NULL`
+- `frontend/app/(dashboard)/dashboard/page.tsx` — polls every 5s while `is_syncing=true`; spinner banner shown during sync; auto-reloads all sections when sync completes
+- `frontend/app/(dashboard)/handles/page.tsx` — SUCCESS state now includes `handleId`; "Go to Dashboard" (broken CF profile link) replaced with "Sync & Go to Dashboard" button; `syncHandle()` called before navigation
+- `frontend/app/_lib/analytics.ts` — `is_syncing: boolean` added to `DashboardData`
+- `frontend/app/_lib/handles.ts` — `syncHandle()` function added
+- `backend/tests/integration/test_handle_routes.py` — mock updated: `lastName` → `organization` (latent mismatch from Phase 2.5 QA audit)
+- `backend/tests/unit/test_handle_service.py` — same mock fix
+- `docs/phase_2_6.md` — full phase documentation
+
+**Technical decisions:**
+- BackgroundTask fallback is dev-only by intent — Celery provides retries + monitoring in production; BackgroundTask provides none of those guarantees.
+- `socket_connect_timeout=2` on Redis client caps "Redis not running" failure at 2s instead of OS default (~30s).
+- `is_syncing=True` when `last_synced_at IS NULL` catches the window between "BackgroundTask enqueued" and "sync sets status to IN_PROGRESS".
+- `syncHandle()` treats HTTP 429 (cooldown) as success — cooldown means a sync is running or just ran, which is the desired outcome.
+- All 67 tests passing.
 
 ## Phase 3 — Contest Discovery [TODO]
 ## Phase 4 — Classroom System [TODO]

@@ -42,7 +42,7 @@ def test_token_prefix():
 @pytest.mark.asyncio
 async def test_fetch_cf_user_success():
     respx.get("https://codeforces.com/api/user.info").mock(
-        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "lastName": ""}]})
+        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "organization": ""}]})
     )
     user = await fetch_cf_user("tourist")
     assert user["handle"] == "tourist"
@@ -71,7 +71,7 @@ async def test_initiate_409_when_handle_verified_by_other_user():
 
     # Mock CF API — handle exists
     respx.get("https://codeforces.com/api/user.info").mock(
-        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "lastName": ""}]})
+        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "organization": ""}]})
     )
 
     # DB returns a verified row owned by another user
@@ -164,7 +164,7 @@ async def test_confirm_increments_attempt_count_on_mismatch():
     row.verification_attempt_count = 1
 
     respx.get("https://codeforces.com/api/user.info").mock(
-        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "lastName": "WRONG"}]})
+        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "organization": "WRONG"}]})
     )
 
     db = AsyncMock()
@@ -201,7 +201,7 @@ async def test_confirm_locks_on_5th_failure():
     row.verification_attempt_count = 4  # this call will be the 5th
 
     respx.get("https://codeforces.com/api/user.info").mock(
-        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "lastName": "WRONG"}]})
+        return_value=Response(200, json={"status": "OK", "result": [{"handle": "tourist", "organization": "WRONG"}]})
     )
 
     db = AsyncMock()

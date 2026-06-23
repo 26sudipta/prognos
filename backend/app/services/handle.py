@@ -11,7 +11,7 @@ from app.models.user_handle import HandlePlatform, HandleStatus, UserHandle
 
 CF_USER_INFO_URL = "https://codeforces.com/api/user.info"
 TOKEN_PREFIX = "PGS-"
-TOKEN_EXPIRY_MINUTES = 30
+TOKEN_EXPIRY_MINUTES = 60
 MAX_VERIFY_ATTEMPTS = 5
 LOCKOUT_HOURS = 1
 
@@ -176,11 +176,11 @@ async def confirm_verification(
             detail="Verification token has expired. Please re-initiate.",
         )
 
-    # Call CF API and check lastName
+    # Call CF API — check organization field only
     cf_user = await fetch_cf_user(row.handle)
-    last_name = cf_user.get("lastName", "")
+    cf_org = cf_user.get("organization", "").strip()
 
-    if last_name == row.verification_token:
+    if cf_org == row.verification_token:
         row.is_verified = True
         row.verified_at = now
         row.verification_token = None
@@ -202,7 +202,7 @@ async def confirm_verification(
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={
-            "message": "Token not found in Codeforces profile lastName field",
+            "message": "Token not found in Codeforces profile Organization field",
             "attempts_remaining": attempts_remaining,
         },
     )

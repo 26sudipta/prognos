@@ -13,8 +13,8 @@ from app.models.user import User
 from app.models.user_handle import HandlePlatform, HandleStatus, UserHandle
 from app.services.handle import generate_verification_token
 
-CF_OK = {"status": "OK", "result": [{"handle": "tourist", "lastName": ""}]}
-CF_WITH_TOKEN = lambda token: {"status": "OK", "result": [{"handle": "tourist", "lastName": token}]}  # noqa: E731
+CF_OK = {"status": "OK", "result": [{"handle": "tourist", "organization": ""}]}
+CF_WITH_TOKEN = lambda token: {"status": "OK", "result": [{"handle": "tourist", "organization": token}]}  # noqa: E731
 
 
 # ---------------------------------------------------------------------------

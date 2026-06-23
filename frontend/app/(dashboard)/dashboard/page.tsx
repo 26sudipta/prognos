@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Link2 } from "lucide-react";
+import { Link2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/app/_components/auth-provider";
 import {
   fetchDashboard,
@@ -33,6 +33,7 @@ const EMPTY_DASHBOARD: DashboardData = {
   total_solved: 0,
   cf_rating: null,
   has_verified_handle: true, // don't show nudge on fetch failure
+  is_syncing: false,
 };
 
 function noHandleLinked(d: DashboardData): boolean {
@@ -48,29 +49,52 @@ export default function DashboardPage() {
   const [weaknesses, setWeaknesses] = useState<Async<WeaknessSignal[]>>(undefined);
   // undefined = loading, null = fetched but no set exists, RecommendationSet = has data
   const [recs, setRecs] = useState<RecommendationSet | null | undefined>(undefined);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function loadAll(tok: string) {
+    fetchDashboard(tok)
+      .then((d) => {
+        setDashboard(d);
+        // Poll every 5s while sync is in progress; stop once completed
+        if (d.is_syncing) {
+          if (!pollRef.current) {
+            pollRef.current = setInterval(() => {
+              fetchDashboard(tok).then((fresh) => {
+                setDashboard(fresh);
+                if (!fresh.is_syncing) {
+                  clearInterval(pollRef.current!);
+                  pollRef.current = null;
+                  // Reload all other sections once sync finishes
+                  fetchTags(tok).then(setTags).catch(() => setTags([]));
+                  fetchRatingHistory(tok).then(setRatingHistory).catch(() => setRatingHistory([]));
+                  fetchWeaknesses(tok).then(setWeaknesses).catch(() => setWeaknesses([]));
+                  fetchRecommendations(tok).then(setRecs).catch(() => setRecs(null));
+                }
+              }).catch(() => {});
+            }, 5000);
+          }
+        } else {
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        }
+      })
+      .catch(() => setDashboard(EMPTY_DASHBOARD));
+
+    fetchTags(tok).then(setTags).catch(() => setTags([]));
+    fetchRatingHistory(tok).then(setRatingHistory).catch(() => setRatingHistory([]));
+    fetchWeaknesses(tok).then(setWeaknesses).catch(() => setWeaknesses([]));
+    fetchRecommendations(tok).then(setRecs).catch(() => setRecs(null));
+  }
 
   useEffect(() => {
     if (!token) return;
-
-    fetchDashboard(token)
-      .then(setDashboard)
-      .catch(() => setDashboard(EMPTY_DASHBOARD));
-
-    fetchTags(token)
-      .then(setTags)
-      .catch(() => setTags([]));
-
-    fetchRatingHistory(token)
-      .then(setRatingHistory)
-      .catch(() => setRatingHistory([]));
-
-    fetchWeaknesses(token)
-      .then(setWeaknesses)
-      .catch(() => setWeaknesses([]));
-
-    fetchRecommendations(token)
-      .then(setRecs)
-      .catch(() => setRecs(null));
+    loadAll(token);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   // Show nudge if handle isn't linked yet (all endpoints return empty state)
@@ -80,6 +104,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 max-w-[1100px]">
+      {/* Sync banner — shown while initial sync is running */}
+      {dashboard && dashboard.is_syncing && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-primary-500/10 border border-primary-500/25 rounded-xl text-sm text-primary-300">
+          <RefreshCw className="w-4 h-4 shrink-0 animate-spin text-primary-400" />
+          <span>Syncing your Codeforces data&hellip; This usually takes 1–2 minutes. The page will update automatically.</span>
+        </div>
+      )}
+
       {/* Row 1 — stat strip */}
       {dashboard === undefined ? (
         <StatStripSkeleton />

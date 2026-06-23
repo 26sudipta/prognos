@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
@@ -21,6 +22,7 @@ import {
   initiateVerification,
   confirmVerification,
   unlinkHandle,
+  syncHandle,
 } from "@/app/_lib/handles";
 
 // ─── State machine ───────────────────────────────────────────────────────────
@@ -49,7 +51,7 @@ type WizardState =
       handle: string;
       lockoutExpiresAt: Date;
     }
-  | { status: "SUCCESS"; handle: string; verifiedAt: Date };
+  | { status: "SUCCESS"; handle: string; handleId: string; verifiedAt: Date };
 
 function currentStep(state: WizardState): 1 | 2 | 3 {
   if (state.status === "NO_HANDLE" || state.status === "LOADING") return 1;
@@ -191,9 +193,11 @@ function TokenDisplay({ token }: { token: string }) {
 
 export default function HandlesPage() {
   const { token: authToken } = useAuth();
+  const router = useRouter();
   const [state, setState] = useState<WizardState>({ status: "LOADING" });
   const [handleInput, setHandleInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Determine countdown target based on state
@@ -217,6 +221,7 @@ export default function HandlesPage() {
           setState({
             status: "SUCCESS",
             handle: cf.handle,
+            handleId: cf.id,
             verifiedAt: new Date(cf.verified_at!),
           });
           return;
@@ -287,6 +292,7 @@ export default function HandlesPage() {
       setState({
         status: "SUCCESS",
         handle: data.handle,
+        handleId: data.handle_id,
         verifiedAt: new Date(data.verified_at),
       });
     } catch (err) {
@@ -317,6 +323,19 @@ export default function HandlesPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleSync() {
+    if (!authToken || state.status !== "SUCCESS") return;
+    setSyncing(true);
+    try {
+      await syncHandle(authToken, state.handleId);
+    } catch {
+      // silently ignore — sync may already be running
+    } finally {
+      setSyncing(false);
+    }
+    router.push("/dashboard");
   }
 
   async function handleUnlink() {
@@ -418,19 +437,24 @@ export default function HandlesPage() {
                   </span>
                 </div>
 
-                <a
-                  href={`https://codeforces.com/profile/${state.handle}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 transition-colors duration-150 mb-3"
+                <button
+                  onClick={handleSync}
+                  disabled={syncing}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 transition-colors duration-150 mb-3 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Go to Dashboard
-                  <ArrowRight className="w-4 h-4" />
-                </a>
+                  {syncing ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4" />
+                      Sync &amp; Go to Dashboard
+                    </>
+                  )}
+                </button>
 
                 <button
                   onClick={handleUnlink}
-                  disabled={submitting}
+                  disabled={submitting || syncing}
                   className="text-xs text-text-muted hover:text-danger-400 transition-colors duration-150 disabled:opacity-40"
                 >
                   Unlink handle
@@ -525,7 +549,7 @@ export default function HandlesPage() {
                       <ol className="space-y-2.5">
                         {[
                           "We check the handle exists on Codeforces.",
-                          "You paste a short token into your CF profile's Last Name field.",
+                          "You paste a short token into the Organization field at codeforces.com/settings/social. Remove it after verification.",
                           "We read it back — this proves you own the account.",
                         ].map((step, i) => (
                           <li key={i} className="flex items-start gap-2.5 text-xs text-text-muted">
@@ -558,15 +582,15 @@ export default function HandlesPage() {
                       <p className="text-sm text-text-secondary">
                         Go to{" "}
                         <a
-                          href="https://codeforces.com/settings/general"
+                          href="https://codeforces.com/settings/social"
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary-400 hover:text-primary-300 inline-flex items-center gap-1 transition-colors"
                         >
-                          codeforces.com/settings/general
+                          codeforces.com/settings/social
                           <ExternalLink className="w-3 h-3" />
                         </a>{" "}
-                        and paste it in the <span className="text-text-primary font-medium">Last Name</span> field.
+                        and paste it in the <span className="text-text-primary font-medium">Organization</span> field.
                       </p>
                     </div>
 
@@ -631,7 +655,7 @@ export default function HandlesPage() {
                         <AlertCircle className="w-4 h-4 text-danger-400 shrink-0 mt-0.5" />
                         <div>
                           <p className="text-sm text-danger-400">
-                            Token not found in your CF Last Name field.
+                            Token not found in your CF Organization field.
                           </p>
                           <p className="text-xs text-text-muted mt-0.5">
                             Double-check and try again.{" "}

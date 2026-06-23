@@ -198,3 +198,35 @@ Route (app)
 ## Next
 
 Phase 3 — Contest Discovery: `GET /api/v1/contests` endpoint pulling upcoming Codeforces contests, `/contests` page with a filterable list, countdown timers, and calendar export.
+
+---
+
+## Updates
+
+### 2026-06-23 — QA Audit Fixes
+
+**Heatmap tooltip label**
+
+The tooltip rendered `{count} submissions` but `count` is `solved_count` (problems with verdict OK), not raw submission count. Changed to `{count} solved`.
+
+**`noHandleLinked()` rewritten to use `has_verified_handle`**
+
+The original proxy heuristic (`heatmap.length == 0 && total_solved == 0 && cf_rating == null`) false-positives for a verified user with only WA submissions. With the new `has_verified_handle` field on `DashboardResponse` (see Phase 2.2 Updates), the function now reads the flag directly:
+
+```tsx
+// Before (proxy — false-positives for all-WA users)
+function noHandleLinked(d: DashboardData): boolean {
+  return d.heatmap.length === 0 && d.total_solved === 0 && d.cf_rating === null;
+}
+
+// After (direct flag from backend)
+function noHandleLinked(d: DashboardData): boolean {
+  return !d.has_verified_handle;
+}
+```
+
+`EMPTY_DASHBOARD` (used as error fallback when the fetch fails) sets `has_verified_handle: true` so a network error shows empty dashboard sections rather than the "Link your handle" nudge.
+
+**`refreshRecommendations()` added to `_lib/analytics.ts`**
+
+Wraps the new `POST /analytics/recommendations/refresh` endpoint. Not yet wired into a UI button — the endpoint exists and the client function is ready for Phase 3 integration.

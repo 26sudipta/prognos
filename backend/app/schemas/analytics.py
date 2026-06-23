@@ -18,6 +18,7 @@ class DashboardResponse(BaseModel):
     total_solved: int
     cf_rating: int | None
     has_verified_handle: bool
+    is_syncing: bool = False  # True when handle sync is in-progress or has never completed
 
 
 class TagStatsResponse(BaseModel):
