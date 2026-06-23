@@ -57,8 +57,11 @@ function RatingTooltip({
         </span>
       </div>
       <p className="text-text-muted text-[11px]">
-        Was <span className="font-mono">{e.old_rating}</span>
-        {" · "}{cfLabel(e.new_rating)}
+        <span className="font-mono">{e.old_rating}</span>
+        <span className="mx-1 opacity-40">→</span>
+        <span className="font-mono" style={{ color: cfColor(e.new_rating) }}>{e.new_rating}</span>
+        {" "}
+        <span className="opacity-60">({cfLabel(e.new_rating)})</span>
       </p>
       <p className="text-text-muted mt-1">Rank #{e.rank.toLocaleString()}</p>
       <p className="text-text-muted">
@@ -118,10 +121,19 @@ export function RatingChart({ data }: Props) {
         </div>
       </div>
 
-      {/* overflow visible so tooltip can escape above the chart */}
-      <div style={{ overflow: "visible" }}>
+      {/*
+        Three-layer overflow fix so the tooltip can escape above the chart
+        and to the right of the last point:
+          1. This div wrapper — overflow: visible
+          2. .recharts-wrapper — Recharts' internal div (clips by default)
+          3. .recharts-surface — the SVG element (clips by default in browsers)
+      */}
+      <div
+        className="[&_.recharts-wrapper]:overflow-visible [&_.recharts-surface]:overflow-visible"
+        style={{ overflow: "visible" }}
+      >
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={chartData} margin={{ top: 48, right: 8, bottom: 4, left: 0 }}>
+          <LineChart data={chartData} margin={{ top: 48, right: 40, bottom: 4, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1E2D45" vertical={false} />
             <XAxis
               dataKey="label"
@@ -140,7 +152,7 @@ export function RatingChart({ data }: Props) {
             <Tooltip
               content={<RatingTooltip />}
               cursor={{ stroke: "#2A3F5C", strokeWidth: 1 }}
-              allowEscapeViewBox={{ x: false, y: true }}
+              allowEscapeViewBox={{ x: true, y: true }}
             />
             {/* Peak rating reference line — only shown when peak != current */}
             {peakRating > currentRating && (
