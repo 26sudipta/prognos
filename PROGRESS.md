@@ -132,7 +132,23 @@
 - `respx` added as dev dependency for mocking `httpx.AsyncClient` in tests without patching.
 - 400 response for token mismatch returns structured `{"message": ..., "attempts_remaining": N}` so frontend can display remaining attempts.
 
-### 1.7 Handle Verification Frontend [TODO]
+### 1.7 Handle Verification Frontend [DONE]
+**Completed:** 2026-06-23
+
+**Files created/modified:**
+- `frontend/app/_lib/handles.ts` — typed API client with `ApiError` class carrying `status` + `attemptsRemaining`
+- `frontend/app/(dashboard)/handles/page.tsx` — 5-state wizard: `LOADING → NO_HANDLE → PENDING → FAILED → LOCKED → SUCCESS`
+- `frontend/app/_components/sidebar.tsx` — Handles nav item enabled
+- `backend/app/schemas/handle.py` — `HandleResponse` now includes `is_locked` + `lockout_expires_at` for state restoration
+- `backend/app/services/handle.py` — lockout bypass bug fixed: re-initiate blocked during active lockout
+
+**Technical decisions:**
+- 3-step stepper (Enter Handle → Copy Token → Verify) collapsed from 5 internal steps — research confirmed users abandon multi-step wizards past 3 visible steps.
+- Token display: `font-mono tracking-widest select-none` + one-click copy with `AnimatePresence` icon swap (no toast).
+- `useCountdown(target: Date | null)` hook shared between token expiry (PENDING) and lockout timer (LOCKED).
+- LOCKED state uses `warning-400` (amber) not `danger-400` (red) — lockout is a temporary queue, not an error state.
+- Success copy: "Handle verified." (period not exclamation mark) — confident finality, not marketing enthusiasm.
+- State restoration on page reload: `GET /handles` response drives `LOCKED` restore via `lockout_expires_at`; PENDING restores as `NO_HANDLE` (re-initiate gives fresh token, no harm).
 
 ---
 
