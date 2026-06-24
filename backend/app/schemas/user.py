@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UserMe(BaseModel):
@@ -11,3 +11,7 @@ class UserMe(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class UserUpdateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)

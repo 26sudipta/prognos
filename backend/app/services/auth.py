@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime
 
 import httpx
@@ -80,11 +81,17 @@ async def upsert_user(db: AsyncSession, google_payload: dict) -> User:
                 "avatar_url": google_payload.get("picture"),
             },
         )
-        .returning(User)
+        .returning(User.id)
     )
     result = await db.execute(stmt)
+    user_id = result.scalar_one()
     await db.commit()
-    return result.scalar_one()
+    # Re-select after commit to avoid identity map returning stale data
+    fresh = await db.execute(
+        select(User).where(User.id == user_id),
+        execution_options={"populate_existing": True},
+    )
+    return fresh.scalar_one()
 
 
 async def create_session(db: AsyncSession, user_id: str) -> tuple[str, str]:
@@ -150,6 +157,46 @@ async def revoke_token(db: AsyncSession, raw_refresh: str) -> None:
 
 async def revoke_all_tokens(db: AsyncSession, user_id: str) -> None:
     """Revoke all refresh tokens for a user (logout-all)."""
+    await db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=datetime.now(UTC))
+    )
+    await db.commit()
+
+
+async def update_user_name(db: AsyncSession, user_id: str, name: str) -> User:
+    """Update user's display name."""
+    await db.execute(update(User).where(User.id == user_id).values(name=name))
+    await db.commit()
+    result = await db.execute(
+        select(User).where(User.id == user_id),
+        execution_options={"populate_existing": True},
+    )
+    return result.scalar_one()
+
+
+async def soft_delete_user(db: AsyncSession, user_id: str) -> None:
+    """Soft-delete account: anonymize PII, revoke all sessions.
+
+    Teacher ownership check (classrooms) is enforced at the route layer
+    once Phase 4 (classrooms) is built — no-op here until then.
+    """
+    hashed = hashlib.sha256(user_id.encode()).hexdigest()
+    await db.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(
+            is_active=False,
+            email=f"deleted_{hashed[:16]}@deleted.invalid",
+            name="Deleted User",
+            avatar_url=None,
+            google_id=f"deleted_{hashed}",
+        )
+    )
     await db.execute(
         update(RefreshToken)
         .where(

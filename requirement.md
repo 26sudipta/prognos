@@ -196,7 +196,7 @@ PROGNOS is a **social competitive programming analytics platform** — "Strava f
 - User submits their Codeforces handle via `POST /api/v1/handles/verify/initiate`.
 - Backend checks: handle must not already be claimed by another account.
 - Backend calls CF API (`https://codeforces.com/api/user.info?handles={handle}`) to confirm the handle exists on Codeforces.
-- If valid, backend generates a verification token: a random alphanumeric string prefixed `CS-` (e.g., `CS-7G2K9`), stored in `user_handles.verification_token`.
+- If valid, backend generates a verification token: a random hex string prefixed `PGS-` (e.g., `PGS-A3F9C2`), stored in `user_handles.verification_token`.
 - Token is valid for **30 minutes** from generation time (`verification_token_expires_at`).
 
 **Step 2 — User is shown the token:**
@@ -854,9 +854,9 @@ Precomputed cache. Rebuilt every 1–2 hours by Celery task.
 ```json
 {
   "handle_id": "uuid",
-  "verification_token": "CS-7G2K9",
+  "verification_token": "PGS-A3F9C2",
   "expires_at": "2026-06-18T10:30:00Z",
-  "instructions": "Paste 'CS-7G2K9' into the Last Name field of your Codeforces profile (codeforces.com/settings/social)."
+  "instructions": "Paste 'PGS-A3F9C2' into the Last Name field of your Codeforces profile (codeforces.com/settings/social)."
 }
 ```
 
