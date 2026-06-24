@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
 ## Current Status: Phase 1 — In Progress
-**Last Updated:** 2026-06-19
+**Last Updated:** 2026-06-23
 
 ---
 
@@ -149,6 +149,28 @@
 - LOCKED state uses `warning-400` (amber) not `danger-400` (red) — lockout is a temporary queue, not an error state.
 - Success copy: "Handle verified." (period not exclamation mark) — confident finality, not marketing enthusiasm.
 - State restoration on page reload: `GET /handles` response drives `LOCKED` restore via `lockout_expires_at`; PENDING restores as `NO_HANDLE` (re-initiate gives fresh token, no harm).
+
+### 1.8 User Account Management [DONE]
+**Completed:** 2026-06-24
+
+**Files created/modified:**
+- `backend/app/schemas/user.py` — added `UserUpdateRequest` schema (`name` field, 1-255 chars)
+- `backend/app/services/auth.py` — added `update_user_name`, `soft_delete_user`; fixed `upsert_user` to re-select with `populate_existing=True` after commit
+- `backend/app/api/v1/routes/users.py` — added `PATCH /users/me`, `DELETE /users/me`
+- `backend/tests/integration/test_auth_service.py` — 11 new integration tests (upsert, session lifecycle, token revocation, update name, soft delete)
+
+**Endpoints added:**
+- `PATCH /api/v1/users/me` — updates display name; returns updated `UserMe`
+- `DELETE /api/v1/users/me` — soft-deletes account: `is_active=false`, PII anonymized (email/google_id/name/avatar replaced), all refresh tokens revoked, refresh cookie cleared
+
+**Technical decisions:**
+- PII anonymization: `email → deleted_{sha256[:16]}@deleted.invalid`, `google_id → deleted_{sha256}`. SHA-256 of the user_id preserves uniqueness constraint while removing original values.
+- Teacher classroom check (`→ 409 Conflict`) deferred to Phase 4 when classrooms are built — stub comment left in route handler.
+- `upsert_user` changed from `returning(User)` to `returning(User.id)` + fresh `select(populate_existing=True)` to avoid SQLAlchemy identity map returning stale data when the same session has a pre-existing cached object.
+- Service integration tests added for: `upsert_user` (create + conflict update), `create_session`, `rotate_refresh_token` (happy path + rejection), `revoke_token`, `revoke_all_tokens`, `update_user_name`, `soft_delete_user`.
+
+**Spec alignment fixes (audit findings):**
+- Token prefix updated in `requirement.md` and `implementation.md` from `CS-` → `PGS-` to match the actual implementation decision documented in Phase 1.6.
 
 ---
 

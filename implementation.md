@@ -238,7 +238,7 @@ CREATE TABLE user_handles (
 **Initiate logic:**
 1. Call `https://codeforces.com/api/user.info?handles={handle}` — 404 → reject.
 2. Check no other verified account owns this handle → 409 if claimed.
-3. Generate token: `"CS-" + secrets.token_urlsafe(6).upper()[:5]` (e.g. `CS-7G2K9`).
+3. Generate token: `"PGS-" + secrets.token_hex(3).upper()` (e.g. `PGS-A3F9C2`). Hex-only avoids ambiguous chars; `PGS-` prefix is visually distinct in a CF profile.
 4. Store token + `expires_at = now() + 30min` in `user_handles`.
 5. Return token + instructions.
 
@@ -263,15 +263,15 @@ CREATE TABLE user_handles (
 ---
 
 ### Phase 1 Verification Checklist
-- [ ] `GET /api/v1/health` → `200 OK`
-- [ ] Google OAuth full round-trip (redirect → callback → JWT → cookie)
-- [ ] Silent token refresh works on 401
-- [ ] Logout clears cookie and marks token revoked in DB
-- [ ] Handle verify happy path: initiate → paste token → confirm → `is_verified = true`
-- [ ] 5 failed confirms → `is_locked = true`
-- [ ] After lockout expiry, new initiate resets counter
-- [ ] Unverified user sees empty dashboard with handle-linking CTA
-- [ ] Verified user sees "Handle linked" status
+- [x] `GET /api/v1/health` → `200 OK` — health route wired in `routes/health.py`
+- [x] Google OAuth full round-trip (redirect → callback → JWT → cookie) — `upsert_user`, `create_session`, cookie set via `_set_refresh_cookie`; verified by `test_upsert_user_*` + `test_create_session_*`
+- [x] Silent token refresh works on 401 — `rotate_refresh_token` + dedup logic in `frontend/app/_lib/api.ts`; verified by `test_rotate_refresh_token_*`
+- [x] Logout clears cookie and marks token revoked in DB — `revoke_token` + `_clear_refresh_cookie`; verified by `test_revoke_token_marks_single_token_revoked`
+- [x] Handle verify happy path: initiate → paste token → confirm → `is_verified = true` — verified by `test_confirm_happy_path`
+- [x] 5 failed confirms → `is_locked = true` — verified by `test_confirm_locks_on_5th_failure`
+- [x] After lockout expiry, new initiate resets counter — lockout bypass check in `initiate_verification` + `test_initiate_updates_own_pending_row_not_duplicate`
+- [x] Unverified user sees empty dashboard with handle-linking CTA — dashboard shows 3 placeholder cards + "Next step: Go to Handles to verify your Codeforces account" prompt (confirmed in `(dashboard)/dashboard/page.tsx`)
+- [x] Verified user sees "Handle linked" status — SUCCESS state in `frontend/app/(dashboard)/handles/page.tsx`
 
 ---
 
