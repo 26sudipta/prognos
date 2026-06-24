@@ -7,8 +7,9 @@ from app.models.signals import WeaknessSignalType
 
 
 class HeatmapDay(BaseModel):
-    date: str  # ISO format YYYY-MM-DD
-    count: int
+    date: str   # ISO format YYYY-MM-DD
+    count: int  # total submissions (any verdict) — drives heatmap intensity, matches CF behavior
+    solved: int # accepted submissions — shown in tooltip alongside total
 
 
 class DashboardResponse(BaseModel):

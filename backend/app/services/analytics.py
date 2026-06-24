@@ -86,25 +86,37 @@ async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardRespon
     # Fetch all daily_activity rows across all handles (all time)
     rows = (
         await db.execute(
-            select(DailyActivity.activity_date, DailyActivity.solved_count).where(
-                DailyActivity.user_handle_id.in_(handle_ids)
-            )
+            select(
+                DailyActivity.activity_date,
+                DailyActivity.solved_count,
+                DailyActivity.submission_count,
+            ).where(DailyActivity.user_handle_id.in_(handle_ids))
         )
     ).all()
 
     # Aggregate by date across handles
     date_to_solved: dict[date, int] = {}
-    for activity_date, solved_count in rows:
+    date_to_submissions: dict[date, int] = {}
+    for activity_date, solved_count, submission_count in rows:
         date_to_solved[activity_date] = date_to_solved.get(activity_date, 0) + solved_count
+        date_to_submissions[activity_date] = (
+            date_to_submissions.get(activity_date, 0) + submission_count
+        )
 
     total_solved = sum(date_to_solved.values())
     current_streak, longest_streak = _compute_streaks(date_to_solved)
 
+    # Heatmap intensity = total submissions (any verdict), matching CF heatmap behavior.
+    # Days with submissions but no accepted solutions are still shown.
     cutoff = date.today() - timedelta(days=364)
     heatmap = [
-        HeatmapDay(date=d.isoformat(), count=count)
-        for d, count in sorted(date_to_solved.items())
-        if d >= cutoff and count > 0
+        HeatmapDay(
+            date=d.isoformat(),
+            count=date_to_submissions.get(d, 0),
+            solved=date_to_solved.get(d, 0),
+        )
+        for d in sorted(date_to_submissions.keys())
+        if d >= cutoff and date_to_submissions.get(d, 0) > 0
     ]
 
     # Current rating = new_rating from the most recent rating_history row

@@ -2,7 +2,8 @@ import { apiFetch } from "./api";
 
 export interface HeatmapDay {
   date: string;
-  count: number;
+  count: number;  // total submissions (any verdict) — drives heatmap intensity
+  solved: number; // accepted only — shown in tooltip
 }
 
 export interface DashboardData {

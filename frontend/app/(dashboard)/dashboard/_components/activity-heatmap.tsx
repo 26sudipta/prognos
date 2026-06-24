@@ -16,12 +16,13 @@ function levelColor(count: number, max: number): string {
 
 interface Cell {
   date: string;
-  count: number;
+  count: number;  // total submissions
+  solved: number; // accepted only
   isFuture: boolean;
 }
 
 function buildGrid(heatmap: HeatmapDay[]): Cell[][] {
-  const lookup = new Map(heatmap.map((d) => [d.date, d.count]));
+  const lookup = new Map(heatmap.map((d) => [d.date, d]));
 
   const today = new Date();
   // Use UTC date string to match backend storage (TIMESTAMPTZ, dates stored in UTC)
@@ -41,7 +42,8 @@ function buildGrid(heatmap: HeatmapDay[]): Cell[][] {
       const cell = new Date(start);
       cell.setDate(start.getDate() + w * 7 + d);
       const key = cell.toISOString().slice(0, 10);
-      week.push({ date: key, count: lookup.get(key) ?? 0, isFuture: key > todayStr });
+      const day = lookup.get(key);
+      week.push({ date: key, count: day?.count ?? 0, solved: day?.solved ?? 0, isFuture: key > todayStr });
     }
     weeks.push(week);
   }
@@ -64,7 +66,8 @@ const DAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
 
 interface TooltipState {
   date: string;
-  count: number;
+  count: number;  // total submissions
+  solved: number;
   x: number;
   y: number;
 }
@@ -80,14 +83,16 @@ export function ActivityHeatmap({ data }: Props) {
   const weeks = buildGrid(data);
   const labels = monthLabels(weeks);
   // Only count non-future cells; backend already filters to last 364 days
+  // Intensity based on submission count (any verdict) — matches CF heatmap behavior
   const max = Math.max(...data.map((d) => d.count), 1);
-  const totalThisYear = data.reduce((sum, d) => sum + d.count, 0);
+  // Header counter shows accepted solutions (more meaningful than raw submissions)
+  const totalSolvedThisYear = data.reduce((sum, d) => sum + d.solved, 0);
 
-  function onEnter(e: React.MouseEvent<HTMLDivElement>, date: string, count: number) {
+  function onEnter(e: React.MouseEvent<HTMLDivElement>, cell: Cell) {
     const cr = containerRef.current?.getBoundingClientRect();
     const er = e.currentTarget.getBoundingClientRect();
     if (!cr) return;
-    setTip({ date, count, x: er.left - cr.left + er.width / 2, y: er.top - cr.top });
+    setTip({ date: cell.date, count: cell.count, solved: cell.solved, x: er.left - cr.left + er.width / 2, y: er.top - cr.top });
   }
 
   // Tooltip appears below cells near the top, above otherwise
@@ -102,7 +107,7 @@ export function ActivityHeatmap({ data }: Props) {
           Submission Activity
         </h2>
         <span className="text-xs text-text-muted">
-          <span className="font-mono font-semibold text-text-primary">{totalThisYear}</span>
+          <span className="font-mono font-semibold text-text-primary">{totalSolvedThisYear}</span>
           {" "}solved in the last year
         </span>
       </div>
@@ -143,7 +148,7 @@ export function ActivityHeatmap({ data }: Props) {
                       ? { backgroundColor: "transparent", border: "1px solid #1E2D45" }
                       : { backgroundColor: levelColor(cell.count, max), cursor: "default" }
                   }
-                  onMouseEnter={cell.isFuture ? undefined : (e) => onEnter(e, cell.date, cell.count)}
+                  onMouseEnter={cell.isFuture ? undefined : (e) => onEnter(e, cell)}
                   onMouseLeave={cell.isFuture ? undefined : () => setTip(null)}
                 />
               ))}
@@ -157,15 +162,20 @@ export function ActivityHeatmap({ data }: Props) {
             className="absolute pointer-events-none z-20 bg-bg-surface-overlay border border-border-default rounded-lg px-3 py-2 text-xs shadow-xl -translate-x-1/2"
             style={{ left: tip.x, top: tooltipTop(tip.y) }}
           >
-            <span className="font-mono font-semibold text-text-primary">{tip.count}</span>
-            <span className="text-text-muted ml-1">{tip.count === 1 ? "problem" : "problems"} solved</span>
-            <div className="text-text-muted mt-0.5">
+            <div className="text-text-muted mb-1">
               {new Date(tip.date + "T12:00:00").toLocaleDateString("en", {
                 weekday: "short",
                 month: "long",
                 day: "numeric",
                 year: "numeric",
               })}
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="font-mono font-semibold text-text-primary">{tip.solved}</span>
+              <span className="text-text-muted">solved</span>
+              {tip.count > tip.solved && (
+                <span className="text-text-disabled ml-1">· {tip.count} submitted</span>
+              )}
             </div>
           </div>
         )}
