@@ -201,7 +201,29 @@
 - Weakness signals use mutually exclusive `if/elif/elif`: neglected > low_success > under_practiced.
 - All 42 tests passing.
 
-### 2.2 Analytics API [TODO]
+### 2.2 Analytics API [DONE]
+**Completed:** 2026-06-25
+
+**Files created/modified:**
+- `backend/app/schemas/analytics.py` — `HeatmapDay`, `DashboardResponse`, `TagStatsResponse`, `RatingHistoryResponse`
+- `backend/app/services/analytics.py` — `get_dashboard`, `get_tag_stats`, `get_rating_history` + `_compute_streaks`
+- `backend/app/api/v1/routes/analytics.py` — 3 GET route handlers
+- `backend/app/api/v1/__init__.py` — analytics router wired in
+- `backend/tests/integration/test_analytics_routes.py` — 16 tests (streak unit + dashboard/tags/rating integration)
+- `docs/phase_2_2.md` — phase documentation
+
+**Endpoints added:**
+- `GET /api/v1/analytics/dashboard` — heatmap (365 days, non-zero days only), current_streak, longest_streak, total_solved (all-time), cf_rating
+- `GET /api/v1/analytics/tags` — tag_stats sorted by solved_count DESC
+- `GET /api/v1/analytics/rating-history` — rating_history sorted by contest_time ASC
+
+**Technical decisions:**
+- Streaks computed at read time from `daily_activity` (≤1825 rows for 5 years) — no denormalized column needed; value is always accurate.
+- No grace-day logic: current_streak = 0 if today has 0 solved (honest streak semantics).
+- Heatmap scoped to 365 days; total_solved and streaks are all-time — different scopes are intentional.
+- `cf_rating` derived from `rating_history.new_rating ORDER BY contest_time DESC LIMIT 1` — same source as sync worker.
+- No handle → graceful empty/zero response (not 404).
+- All 58 tests passing.
 ### 2.3 Weakness + Recommendations Engine [TODO]
 ### 2.4 Dashboard UI [TODO]
 
