@@ -1,10 +1,10 @@
 import uuid
 from datetime import UTC, date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.analytics import DailyActivity, RatingHistory, TagStats
+from app.models.analytics import DailyActivity, RatingHistory, Submission, TagStats
 from app.models.signals import RecommendationSet, WeaknessSignal
 from app.models.user_handle import HandleSyncStatus, UserHandle
 from app.schemas.analytics import (
@@ -103,8 +103,20 @@ async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardRespon
             date_to_submissions.get(activity_date, 0) + submission_count
         )
 
-    total_solved = sum(date_to_solved.values())
-    current_streak, longest_streak = _compute_streaks(date_to_solved)
+    # Total distinct problems solved across all time — sum of daily distinct counts
+    # would double-count a problem solved (AC'd) on more than one day, so query directly.
+    total_solved = (
+        await db.execute(
+            select(func.count(func.distinct(Submission.problem_id))).where(
+                Submission.user_handle_id.in_(handle_ids),
+                Submission.verdict == "OK",
+            )
+        )
+    ).scalar_one() or 0
+
+    # Streak counts any-submission days (matching CF's definition), not AC-only days.
+    # A day where you tried and got WA still shows real effort and shouldn't break the streak.
+    current_streak, longest_streak = _compute_streaks(date_to_submissions)
 
     # Heatmap intensity = total submissions (any verdict), matching CF heatmap behavior.
     # Days with submissions but no accepted solutions are still shown.

@@ -7,7 +7,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.analytics import DailyActivity, RatingHistory, TagStats
+from app.models.analytics import DailyActivity, RatingHistory, Submission, TagStats
 from app.models.user_handle import HandlePlatform, HandleStatus, HandleSyncStatus, UserHandle
 from app.services.analytics import _compute_streaks, get_dashboard, get_rating_history, get_tag_stats
 
@@ -46,6 +46,32 @@ async def daily_activity_rows(db_session: AsyncSession, verified_handle):
         DailyActivity(user_handle_id=verified_handle.id, activity_date=today - timedelta(days=3), solved_count=5, submission_count=6),
         # A row older than 365 days — should NOT appear in heatmap but must count toward total_solved
         DailyActivity(user_handle_id=verified_handle.id, activity_date=today - timedelta(days=400), solved_count=10, submission_count=12),
+    ]
+    for r in rows:
+        db_session.add(r)
+    await db_session.commit()
+    yield rows
+    for r in rows:
+        await db_session.delete(r)
+    await db_session.commit()
+
+
+@pytest_asyncio.fixture
+async def submission_rows(db_session: AsyncSession, verified_handle):
+    """7 distinct OK problems + 1 WA + 1 duplicate OK (same problem_id) = 7 distinct solved."""
+    today = datetime.now(UTC)
+    rows = [
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9001, problem_id="1A", problem_name="P1", verdict="OK", lang="C++", submitted_at=today),
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9002, problem_id="1B", problem_name="P2", verdict="OK", lang="C++", submitted_at=today),
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9003, problem_id="1C", problem_name="P3", verdict="OK", lang="C++", submitted_at=today),
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9004, problem_id="2A", problem_name="P4", verdict="OK", lang="C++", submitted_at=today),
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9005, problem_id="2B", problem_name="P5", verdict="OK", lang="C++", submitted_at=today),
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9006, problem_id="2C", problem_name="P6", verdict="OK", lang="C++", submitted_at=today),
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9007, problem_id="3A", problem_name="P7", verdict="OK", lang="C++", submitted_at=today),
+        # WA submission — should NOT count toward total_solved
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9008, problem_id="3B", problem_name="P8", verdict="WRONG_ANSWER", lang="C++", submitted_at=today),
+        # Duplicate OK on same problem_id as 9001 — should not increase distinct count
+        Submission(user_handle_id=verified_handle.id, cf_submission_id=9009, problem_id="1A", problem_name="P1", verdict="OK", lang="C++", submitted_at=today),
     ]
     for r in rows:
         db_session.add(r)
@@ -206,24 +232,27 @@ async def test_dashboard_heatmap_excludes_zero_solved_days(db_session: AsyncSess
 
 
 @pytest.mark.asyncio
-async def test_dashboard_total_solved_includes_old_rows(db_session: AsyncSession, test_user, verified_handle, daily_activity_rows):
-    # solved_count: 3 + 2 + 0 + 5 + 10 = 20
+async def test_dashboard_total_solved_includes_old_rows(db_session: AsyncSession, test_user, verified_handle, submission_rows):
+    # 7 distinct OK problem_ids (1A submitted twice → still counts once; 3B is WA → excluded)
     result = await get_dashboard(db_session, test_user.id)
-    assert result.total_solved == 20
+    assert result.total_solved == 7
 
 
 @pytest.mark.asyncio
 async def test_dashboard_current_streak(db_session: AsyncSession, test_user, verified_handle, daily_activity_rows):
-    # today=3, yesterday=2, day-2=0 (break), day-3=5 → streak stops at day-2
+    # Streak uses submission_count (any submission = CF definition).
+    # submission_count: today=5, day-1=3, day-2=1, day-3=6 — all consecutive, none zero.
+    # day-400 is isolated (397-day gap). Current streak = 4 (day-3 through today).
     result = await get_dashboard(db_session, test_user.id)
-    assert result.current_streak == 2
+    assert result.current_streak == 4
 
 
 @pytest.mark.asyncio
 async def test_dashboard_longest_streak(db_session: AsyncSession, test_user, verified_handle, daily_activity_rows):
-    # day-3=5, day-2=0(break), yesterday=2, today=3 → longest run = 2
+    # submission_count: day-3=6, day-2=1, day-1=3, today=5 — all > 0, consecutive.
+    # day-400 is isolated. Longest run = 4.
     result = await get_dashboard(db_session, test_user.id)
-    assert result.longest_streak == 2
+    assert result.longest_streak == 4
 
 
 @pytest.mark.asyncio

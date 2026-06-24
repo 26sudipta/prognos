@@ -230,7 +230,7 @@ async def _recompute_daily_activity(handle_id: uuid.UUID, session: AsyncSession)
                 s.user_handle_id,
                 DATE(s.submitted_at AT TIME ZONE 'UTC') AS activity_date,
                 COUNT(*) AS submission_count,
-                COUNT(*) FILTER (WHERE s.verdict = 'OK') AS solved_count
+                COUNT(DISTINCT CASE WHEN s.verdict = 'OK' THEN s.problem_id END) AS solved_count
             FROM submissions s
             WHERE s.user_handle_id = :handle_id
             GROUP BY s.user_handle_id, DATE(s.submitted_at AT TIME ZONE 'UTC')
