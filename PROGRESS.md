@@ -1,6 +1,6 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 2 — Complete. Phase 3 next.
+## Current Status: Phase 2 — Complete (2.7 done). Phase 3 next.
 **Last Updated:** 2026-06-23 (Phase 2.6)
 
 ---
@@ -319,6 +319,33 @@ Full audit of Phase 2 against `requirement.md` and `implementation.md`. All issu
 - `is_syncing=True` when `last_synced_at IS NULL` catches the window between "BackgroundTask enqueued" and "sync sets status to IN_PROGRESS".
 - `syncHandle()` treats HTTP 429 (cooldown) as success — cooldown means a sync is running or just ran, which is the desired outcome.
 - All 67 tests passing.
+
+### 2.7 Dashboard Polish & Data Audit [DONE]
+**Completed:** 2026-06-25
+
+**Files changed:**
+- `frontend/app/(dashboard)/dashboard/page.tsx` — 70/30 grid split (`cols-10`), `max-w-[1400px] mx-auto`, `items-start` on bottom row, `peakRating` from `ratingHistory`, `handleRefresh` callback, `recTags` wired to `WeaknessCards`
+- `frontend/app/(dashboard)/dashboard/_components/rating-chart.tsx` — sequential numeric XAxis index (all points hover-reachable); 4-layer overflow chain (`overflow-visible` on wrapper + recharts-responsive-container + recharts-wrapper + recharts-surface); peak reference line label moved to `insideTopLeft`; visible dots added
+- `frontend/app/(dashboard)/dashboard/_components/activity-heatmap.tsx` — complete rewrite; GitHub span≥3 month label rule; absolute-positioned month labels; legend moved to header; grid centered with `flex justify-center`
+- `frontend/app/(dashboard)/dashboard/_components/stat-strip.tsx` — peak rating badge inline on rating line (3-line card preserved); badge only shows when peak ≠ current
+- `frontend/app/(dashboard)/dashboard/_components/tag-stats.tsx` — acceptance rate label "% accepted" → "% solved" (metric is problem-level success rate, not submission-level); scrollbar padding `pr-1` → `pr-3`
+- `frontend/app/(dashboard)/dashboard/_components/weakness-cards.tsx` — renamed "Weaknesses" → "Focus Areas"; urgency dots → priority dots (High/Med/Low Priority); "X problems selected" rec-count hint
+- `frontend/app/(dashboard)/dashboard/_components/recommendations.tsx` — Refresh button with spinning icon + `isRefreshing` disabled state; position badges (gold/silver/bronze) restored
+- `backend/app/services/analytics.py` — `_compute_streaks` parameter renamed `date_to_solved` → `date_to_submissions` for clarity
+- `backend/app/workers/cf_sync.py` — `_pick_problem()` collects all candidates then `random.choice()` — fixes Refresh returning the same problem every time
+- `docs/phase_2_7.md` — phase documentation
+
+**Data audit findings (all verified):**
+- `total_solved`: `COUNT(DISTINCT problem_id WHERE verdict='OK')` ✓ correctly deduplicates
+- `cf_rating`: most recent `new_rating` ✓
+- `peak_rating`: `Math.max(all new_ratings)` ✓
+- Streak: any-submission days with grace day ✓
+- Rating history upsert: unique constraint exists (migration 004) ✓
+- Heatmap, tag stats, weaknesses, recommendations: all logically correct ✓
+
+**Test count:** 67 passed (unchanged — no new endpoints)
+
+---
 
 ## Phase 3 — Contest Discovery [TODO]
 ## Phase 4 — Classroom System [TODO]

@@ -94,8 +94,9 @@ export function RatingChart({ data }: Props) {
   const yMin = Math.max(0, Math.min(...ratings) - 50);
   const yMax = peakRating + 60;
 
-  const chartData = data.map((d) => ({
+  const chartData = data.map((d, i) => ({
     ...d,
+    idx: i,  // sequential index — guarantees unique X position for every contest
     label: new Date(d.contest_time).toLocaleDateString("en", {
       month: "short",
       year: "2-digit",
@@ -103,7 +104,7 @@ export function RatingChart({ data }: Props) {
   }));
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full">
       <div className="flex items-start justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
           Rating History
@@ -122,21 +123,26 @@ export function RatingChart({ data }: Props) {
       </div>
 
       {/*
-        Three-layer overflow fix so the tooltip can escape above the chart
+        Four-layer overflow fix so the tooltip can escape above the chart (peak)
         and to the right of the last point:
           1. This div wrapper — overflow: visible
-          2. .recharts-wrapper — Recharts' internal div (clips by default)
-          3. .recharts-surface — the SVG element (clips by default in browsers)
+          2. .recharts-responsive-container — ResponsiveContainer's own div (clips by default)
+          3. .recharts-wrapper — Recharts' internal div (clips by default)
+          4. .recharts-surface — the SVG element (clips by default in browsers)
       */}
       <div
-        className="[&_.recharts-wrapper]:overflow-visible [&_.recharts-surface]:overflow-visible"
+        className="[&_.recharts-responsive-container]:overflow-visible [&_.recharts-wrapper]:overflow-visible [&_.recharts-surface]:overflow-visible"
         style={{ overflow: "visible" }}
       >
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={chartData} margin={{ top: 48, right: 40, bottom: 4, left: 0 }}>
+          <LineChart data={chartData} margin={{ top: 60, right: 60, bottom: 4, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1E2D45" vertical={false} />
             <XAxis
-              dataKey="label"
+              dataKey="idx"
+              type="number"
+              domain={[0, chartData.length - 1]}
+              ticks={chartData.map((_, i) => i)}
+              tickFormatter={(i: number) => chartData[i]?.label ?? ""}
               tick={{ fill: "#64748B", fontSize: 10 }}
               tickLine={false}
               axisLine={false}
@@ -163,7 +169,7 @@ export function RatingChart({ data }: Props) {
                 strokeOpacity={0.4}
                 label={{
                   value: `Peak ${peakRating}`,
-                  position: "insideTopRight",
+                  position: "insideTopLeft",
                   fill: cfColor(peakRating),
                   fontSize: 9,
                   opacity: 0.6,
@@ -175,8 +181,8 @@ export function RatingChart({ data }: Props) {
               dataKey="new_rating"
               stroke="#818CF8"
               strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4, fill: "#22D3EE", stroke: "#0F1623", strokeWidth: 2 }}
+              dot={{ r: 2.5, fill: "#818CF8", stroke: "#0F1623", strokeWidth: 1.5 }}
+              activeDot={{ r: 5, fill: "#22D3EE", stroke: "#0F1623", strokeWidth: 2 }}
             />
           </LineChart>
         </ResponsiveContainer>

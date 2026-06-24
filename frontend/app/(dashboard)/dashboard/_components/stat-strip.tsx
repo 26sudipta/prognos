@@ -34,9 +34,10 @@ function cfRatingLabel(rating: number | null): string {
 
 interface Props {
   data: DashboardData;
+  peakRating?: number | null;
 }
 
-export function StatStrip({ data }: Props) {
+export function StatStrip({ data, peakRating }: Props) {
   const { current_streak, longest_streak, total_solved, cf_rating } = data;
 
   return (
@@ -63,18 +64,28 @@ export function StatStrip({ data }: Props) {
         value={String(total_solved)}
         sub="problems"
       />
-      <StatCard
-        icon={
-          <TrendingUp
-            className="w-5 h-5"
-            style={{ color: cfRatingColor(cf_rating) }}
-          />
-        }
-        label="CF Rating"
-        value={cf_rating !== null ? String(cf_rating) : "—"}
-        sub={cfRatingLabel(cf_rating)}
-        valueColor={cfRatingColor(cf_rating)}
-      />
+      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <TrendingUp className="w-5 h-5" style={{ color: cfRatingColor(cf_rating) }} />
+          <span className="text-[10px] text-text-muted uppercase tracking-widest">CF Rating</span>
+        </div>
+        <div className="flex items-center gap-2 leading-none">
+          <p className="font-mono text-3xl font-bold" style={{ color: cfRatingColor(cf_rating) }}>
+            {cf_rating !== null ? cf_rating : "—"}
+          </p>
+          {peakRating !== null && peakRating !== undefined && peakRating !== cf_rating && (
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-bg-surface-raised border border-border-default text-[11px]"
+            >
+              <span className="text-text-muted font-medium">max</span>
+              <span className="font-mono font-bold" style={{ color: cfRatingColor(peakRating) }}>
+                {peakRating}
+              </span>
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-text-muted mt-1.5">{cfRatingLabel(cf_rating)}</p>
+      </div>
     </div>
   );
 }

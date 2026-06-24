@@ -4,47 +4,45 @@ import type { WeaknessSignal, WeaknessSignalType } from "@/app/_lib/analytics";
 
 const SIGNAL_CFG: Record<
   WeaknessSignalType,
-  { label: string; color: string; bg: string; border: string }
+  { label: string; priority: string; color: string; bg: string; border: string }
 > = {
   low_success: {
     label: "Low Success",
+    priority: "High Priority",
     color: "#F87171",
     bg: "rgba(248,113,113,0.06)",
     border: "rgba(248,113,113,0.25)",
   },
   neglected: {
     label: "Neglected",
+    priority: "Med Priority",
     color: "#FBBF24",
     bg: "rgba(251,191,36,0.06)",
     border: "rgba(251,191,36,0.25)",
   },
   under_practiced: {
     label: "Under-practiced",
+    priority: "Low Priority",
     color: "#22D3EE",
     bg: "rgba(34,211,238,0.06)",
     border: "rgba(34,211,238,0.25)",
   },
 };
 
-// Visual urgency: score ranges roughly 0–3; clamp to 5 filled dots
-function urgencyDots(score: number): number {
-  return Math.min(5, Math.max(1, Math.round((score / 3) * 5)));
-}
-
 interface Props {
   data: WeaknessSignal[];
+  recTags?: string[];
 }
 
-export function WeaknessCards({ data }: Props) {
+export function WeaknessCards({ data, recTags = [] }: Props) {
   if (data.length === 0) {
     return (
       <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex items-center justify-center min-h-[200px]">
-        <p className="text-sm text-text-muted">No weaknesses detected yet.</p>
+        <p className="text-sm text-text-muted">No focus areas detected yet.</p>
       </div>
     );
   }
 
-  // All signals in a batch share the same computed_at
   const analyzedAt = data[0].computed_at;
   const analyzedLabel = new Date(analyzedAt).toLocaleDateString("en", {
     month: "short",
@@ -56,7 +54,7 @@ export function WeaknessCards({ data }: Props) {
     <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full">
       <div className="flex items-baseline justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
-          Weaknesses
+          Focus Areas
         </h2>
         <span className="text-[10px] text-text-disabled">analyzed {analyzedLabel}</span>
       </div>
@@ -64,13 +62,14 @@ export function WeaknessCards({ data }: Props) {
       <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
         {data.map((s) => {
           const cfg = SIGNAL_CFG[s.signal_type];
-          const dots = urgencyDots(s.score);
+          const recCount = recTags.filter((t) => t === s.tag).length;
           return (
             <div
               key={s.id}
               className="rounded-lg border p-3.5"
               style={{ backgroundColor: cfg.bg, borderColor: cfg.border }}
             >
+              {/* Tag + type badge */}
               <div className="flex items-start justify-between gap-2 mb-1.5">
                 <span className="text-sm font-medium text-text-primary truncate">{s.tag}</span>
                 <span
@@ -81,20 +80,25 @@ export function WeaknessCards({ data }: Props) {
                 </span>
               </div>
 
+              {/* Reason */}
               <p className="text-xs text-text-muted leading-relaxed">{s.reason}</p>
 
-              {/* Urgency dots */}
-              <div className="flex items-center gap-1 mt-2">
-                {[1, 2, 3, 4, 5].map((i) => (
+              {/* Priority indicator + rec count */}
+              <div className="flex items-center justify-between mt-2.5">
+                <div className="flex items-center gap-1.5">
                   <div
-                    key={i}
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{
-                      backgroundColor: i <= dots ? cfg.color : "rgba(255,255,255,0.08)",
-                    }}
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: cfg.color }}
                   />
-                ))}
-                <span className="text-[10px] text-text-disabled ml-1.5">urgency</span>
+                  <span className="text-[10px] font-semibold" style={{ color: cfg.color }}>
+                    {cfg.priority}
+                  </span>
+                </div>
+                {recCount > 0 && (
+                  <span className="text-[10px] text-text-disabled">
+                    {recCount} problem{recCount > 1 ? "s" : ""} selected
+                  </span>
+                )}
               </div>
             </div>
           );

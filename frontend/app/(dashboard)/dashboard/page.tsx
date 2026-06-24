@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Link2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/app/_components/auth-provider";
@@ -10,6 +10,7 @@ import {
   fetchRatingHistory,
   fetchWeaknesses,
   fetchRecommendations,
+  refreshRecommendations,
   type DashboardData,
   type TagStat,
   type RatingEntry,
@@ -49,6 +50,7 @@ export default function DashboardPage() {
   const [weaknesses, setWeaknesses] = useState<Async<WeaknessSignal[]>>(undefined);
   // undefined = loading, null = fetched but no set exists, RecommendationSet = has data
   const [recs, setRecs] = useState<RecommendationSet | null | undefined>(undefined);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function loadAll(tok: string) {
@@ -88,6 +90,19 @@ export default function DashboardPage() {
     fetchRecommendations(tok).then(setRecs).catch(() => setRecs(null));
   }
 
+  const handleRefresh = useCallback(async () => {
+    if (!token || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const fresh = await refreshRecommendations(token);
+      setRecs(fresh);
+    } catch {
+      // silently ignore — old recs remain shown
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [token, isRefreshing]);
+
   useEffect(() => {
     if (!token) return;
     loadAll(token);
@@ -103,7 +118,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-5 max-w-[1100px]">
+    <div className="space-y-5 max-w-[1400px] mx-auto">
       {/* Sync banner — shown while initial sync is running */}
       {dashboard && dashboard.is_syncing && (
         <div className="flex items-center gap-3 px-4 py-3 bg-primary-500/10 border border-primary-500/25 rounded-xl text-sm text-primary-300">
@@ -116,7 +131,14 @@ export default function DashboardPage() {
       {dashboard === undefined ? (
         <StatStripSkeleton />
       ) : (
-        <StatStrip data={dashboard ?? EMPTY_DASHBOARD} />
+        <StatStrip
+          data={dashboard ?? EMPTY_DASHBOARD}
+          peakRating={
+            ratingHistory && ratingHistory.length > 0
+              ? Math.max(...ratingHistory.map((r) => r.new_rating))
+              : null
+          }
+        />
       )}
 
       {/* Row 2 — activity heatmap */}
@@ -127,33 +149,40 @@ export default function DashboardPage() {
       )}
 
       {/* Row 3 — rating chart (60%) + tag stats (40%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        <div className="lg:col-span-3">
+      <div className="grid grid-cols-1 lg:grid-cols-10 gap-5">
+        <div className="lg:col-span-7 flex flex-col">
           {ratingHistory === undefined ? (
             <RatingChartSkeleton />
           ) : (
             <RatingChart data={ratingHistory ?? []} />
           )}
         </div>
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-3 flex flex-col">
           {tags === undefined ? <TagStatsSkeleton /> : <TagStats data={tags ?? []} />}
         </div>
       </div>
 
       {/* Row 4 — weaknesses + recommendations */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         <div>
           {weaknesses === undefined ? (
             <WeaknessCardsSkeleton />
           ) : (
-            <WeaknessCards data={weaknesses ?? []} />
+            <WeaknessCards
+              data={weaknesses ?? []}
+              recTags={recs?.recommendations.map((r) => r.tag) ?? []}
+            />
           )}
         </div>
         <div>
           {recs === undefined ? (
             <RecommendationsSkeleton />
           ) : (
-            <Recommendations data={recs} />
+            <Recommendations
+              data={recs}
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+            />
           )}
         </div>
       </div>

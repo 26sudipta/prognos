@@ -28,22 +28,25 @@ async def _get_handle_ids(db: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUI
     return list(result.scalars().all())
 
 
-def _compute_streaks(date_to_solved: dict[date, int]) -> tuple[int, int]:
-    """Return (current_streak, longest_streak) from a date→solved_count mapping."""
+def _compute_streaks(date_to_submissions: dict[date, int]) -> tuple[int, int]:
+    """Return (current_streak, longest_streak) from a date→submission_count mapping.
+
+    Streak counts any-submission days (WA, TLE, etc. all count), matching CF's definition.
+    Grace day: if today has no activity yet, the streak is measured from yesterday.
+    """
     today = date.today()
 
     current = 0
-    # Grace day: if today has no activity yet, start counting from yesterday
-    d = today if date_to_solved.get(today, 0) > 0 else today - timedelta(days=1)
-    while date_to_solved.get(d, 0) > 0:
+    d = today if date_to_submissions.get(today, 0) > 0 else today - timedelta(days=1)
+    while date_to_submissions.get(d, 0) > 0:
         current += 1
         d -= timedelta(days=1)
 
     longest = 0
     run = 0
     prev: date | None = None
-    for d in sorted(date_to_solved.keys()):
-        if date_to_solved[d] > 0:
+    for d in sorted(date_to_submissions.keys()):
+        if date_to_submissions[d] > 0:
             if prev is not None and (d - prev).days == 1:
                 run += 1
             else:

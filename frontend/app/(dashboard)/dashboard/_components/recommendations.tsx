@@ -14,7 +14,6 @@ function difficultyColor(rating: number): string {
   return "#9E9E9E";
 }
 
-// Position badge: top 3 get distinct colors, rest get muted
 function positionBadgeStyle(pos: number): { color: string; bg: string } {
   if (pos === 1) return { color: "#FBBF24", bg: "rgba(251,191,36,0.12)" };
   if (pos === 2) return { color: "#94A3B8", bg: "rgba(148,163,184,0.10)" };
@@ -24,9 +23,11 @@ function positionBadgeStyle(pos: number): { color: string; bg: string } {
 
 interface Props {
   data: RecommendationSet | null;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
-export function Recommendations({ data }: Props) {
+export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
   if (data === null) {
     return (
       <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col items-center justify-center text-center gap-4 min-h-[200px]">
@@ -36,7 +37,7 @@ export function Recommendations({ data }: Props) {
         <div>
           <p className="text-sm font-medium text-text-primary">No recommendations yet.</p>
           <p className="text-xs text-text-muted mt-1 leading-relaxed max-w-[240px]">
-            Go to Handles and run a sync to generate problem recommendations tailored to your weaknesses.
+            Go to Handles and run a sync to generate problem recommendations tailored to your focus areas.
           </p>
         </div>
         <Link
@@ -53,16 +54,26 @@ export function Recommendations({ data }: Props) {
 
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full">
-      <div className="flex items-baseline justify-between mb-4">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
           Recommended Problems
         </h2>
-        <span className="font-mono text-[10px] text-text-muted">
-          {new Date(generated_at).toLocaleDateString("en", {
-            month: "short",
-            day: "numeric",
-          })}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-text-disabled">
+            {new Date(generated_at).toLocaleDateString("en", { month: "short", day: "numeric" })}
+          </span>
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
+              title="Regenerate recommendations"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRefreshing ? "animate-spin" : ""}`} />
+              <span>{isRefreshing ? "Refreshing…" : "Refresh"}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">

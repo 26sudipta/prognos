@@ -43,7 +43,7 @@ export function TagStats({ data }: Props) {
       <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest mb-4">
         Top Tags
       </h2>
-      <div className="space-y-3.5 overflow-y-auto max-h-[320px] pr-1">
+      <div className="space-y-3.5 overflow-y-auto max-h-[320px] pr-3">
         {top.map((t) => {
           const accColor = acceptanceColor(t.acceptance_rate);
           return (
@@ -71,8 +71,8 @@ export function TagStats({ data }: Props) {
               {/* Acceptance rate + last activity */}
               <div className="flex items-center justify-between mt-1">
                 <span className="text-[10px] text-text-disabled">{relativeTime(t.last_activity_at)}</span>
-                <span className="text-[10px] font-mono" style={{ color: accColor }}>
-                  {(t.acceptance_rate * 100).toFixed(0)}% accepted
+                <span className="text-[10px] font-mono text-text-disabled">
+                  {(t.acceptance_rate * 100).toFixed(0)}% solved
                 </span>
               </div>
             </div>

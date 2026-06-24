@@ -13,6 +13,7 @@ Pipeline (in order after fetching submissions):
 import asyncio
 import json
 import logging
+import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -450,6 +451,7 @@ def _pick_problem(
     band = 200 if expand else 100
     low = max(800, rating - band)
     high = min(3500, rating + (band * 3))
+    candidates = []
     for p in problems:
         if tag not in p.get("tags", []):
             continue
@@ -459,8 +461,8 @@ def _pick_problem(
         p_id = f"{p.get('contestId', '')}{p.get('index', '')}"
         if p_id in solved_ids:
             continue
-        return p
-    return None
+        candidates.append(p)
+    return random.choice(candidates) if candidates else None
 
 
 async def _get_cf_problemset() -> list[dict]:
