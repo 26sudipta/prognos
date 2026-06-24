@@ -67,7 +67,7 @@ async def google_callback(
     access_token, raw_refresh = await create_session(db, str(user.id))
 
     redirect = RedirectResponse(
-        url=f"{settings.FRONTEND_URL}/auth/callback?token={access_token}"
+        url=f"{settings.FRONTEND_URL}/callback?token={access_token}"
     )
     _set_refresh_cookie(redirect, raw_refresh)
     return redirect

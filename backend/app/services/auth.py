@@ -53,7 +53,7 @@ def decode_google_id_token(id_token: str) -> dict:
         return jwt.decode(
             id_token,
             key="",
-            options={"verify_signature": False, "verify_aud": False},
+            options={"verify_signature": False, "verify_aud": False, "verify_at_hash": False},
         )
     except JWTError as e:
         raise HTTPException(

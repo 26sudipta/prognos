@@ -208,6 +208,25 @@ async def confirm_verification(
     )
 
 
+async def get_handle_for_user(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    handle_id: uuid.UUID,
+) -> UserHandle:
+    result = await db.execute(
+        select(UserHandle).where(
+            UserHandle.id == handle_id,
+            UserHandle.is_active.is_(True),
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Handle not found")
+    if row.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your handle")
+    return row
+
+
 async def unlink_handle(
     db: AsyncSession,
     user_id: uuid.UUID,

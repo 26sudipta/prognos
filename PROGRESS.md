@@ -174,7 +174,37 @@
 
 ---
 
-## Phase 2 — Personal Analytics Engine [TODO]
+## Phase 2 — Personal Analytics Engine [IN_PROGRESS]
+
+### 2.1 Celery + CF Sync Worker [DONE]
+**Completed:** 2026-06-24
+
+**Files created/modified:**
+- `backend/app/models/analytics.py` — `Submission`, `SubmissionTag`, `DailyActivity`, `TagStats`, `RatingHistory`
+- `backend/app/models/signals.py` — `WeaknessSignal`, `RecommendationSet`, `Recommendation`
+- `backend/app/models/__init__.py` — exports all new models
+- `backend/alembic/versions/003_add_analytics_tables.py` — 8 tables + `weakness_signal_type` enum
+- `backend/app/workers/celery_app.py` — Celery instance + beat schedule (sync all handles every 6h)
+- `backend/app/workers/cf_sync.py` — full sync pipeline: fetch → daily_activity → tag_stats → rating_history → weakness_signals → recommendations
+- `backend/app/schemas/handle.py` — `SyncResponse` schema added
+- `backend/app/services/handle.py` — `get_handle_for_user` helper added
+- `backend/app/api/v1/routes/handles.py` — `POST /handles/{id}/sync` manual sync endpoint
+- `backend/tests/unit/test_weakness_signals.py` — 5 unit tests (neglected/low_success/under_practiced rules)
+- `backend/tests/integration/test_sync_endpoint.py` — 7 integration tests (cooldown logic, 403/404 ownership)
+- `docs/phase_2_1.md` — phase documentation
+
+**Technical decisions:**
+- Incremental sync uses `max(cf_submission_id)` as cursor — integer IDs are unambiguous vs. timestamp-based.
+- `daily_activity` and `tag_stats` are fully recomputed on each sync (DELETE + reinsert) — handles CF verdict changes; keeps logic simple.
+- CF problemset cached in Redis (`cf:problemset:all`, 6h TTL) — avoids per-sync API call for recommendations.
+- Manual sync timestamp committed before task dispatch to block concurrent duplicate requests.
+- Weakness signals use mutually exclusive `if/elif/elif`: neglected > low_success > under_practiced.
+- All 42 tests passing.
+
+### 2.2 Analytics API [TODO]
+### 2.3 Weakness + Recommendations Engine [TODO]
+### 2.4 Dashboard UI [TODO]
+
 ## Phase 3 — Contest Discovery [TODO]
 ## Phase 4 — Classroom System [TODO]
 ## Phase 5 — Mobile Companion [TODO]

@@ -1,4 +1,5 @@
 # PROGNOS — Implementation Plan
+
 **Status:** Ready to Build  
 **Last Updated:** 2026-06-18
 
@@ -23,6 +24,7 @@
 | Deployment | Railway (web service + worker service + PostgreSQL plugin + Redis plugin) |
 
 **Design rules:**
+
 - Frontends are dumb — only read pre-computed data, never aggregate on request.
 - Schema-first — Pydantic models defined before routes.
 - All timestamps in UTC in DB; convert to local time client-side only.
@@ -98,10 +100,13 @@ prognos/
 ---
 
 ## Phase 1 — Foundation & Auth
+
 **Goal:** Running stack. Google sign-in works. Codeforces handle can be verified. Nothing else.
 
 ### 1.1 Project Scaffolding
+
 **Deliverables:**
+
 - `backend/` FastAPI app with `GET /api/v1/health → 200 OK`
 - `frontend/` Next.js app with placeholder home page
 - `backend/pyproject.toml` — uv-managed, dependencies: `fastapi`, `uvicorn`, `sqlalchemy[asyncio]`, `asyncpg`, `alembic`, `pydantic-settings`, `python-jose[cryptography]`, `httpx`, `ruff` (dev)
@@ -111,6 +116,7 @@ prognos/
 - Alembic initialized and connected to DB via `DATABASE_URL`
 
 **Environment variables (backend):**
+
 ```
 DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/prognos
 REDIS_URL=redis://localhost:6379/0
@@ -125,6 +131,7 @@ FRONTEND_URL=http://localhost:3000
 ---
 
 ### 1.2 Database Migration: Auth Tables
+
 **Alembic migration creates:**
 
 ```sql
@@ -167,11 +174,13 @@ CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 | GET | `/api/v1/users/me` | Bearer |
 
 **Token strategy:**
+
 - Access JWT: 15-minute expiry, signed with `JWT_SECRET`, returned in response body.
 - Refresh JWT: 7-day expiry, SHA-256 hash stored in `refresh_tokens`, sent as `httpOnly; Secure; SameSite=Strict` cookie.
 - On rotation: old refresh token marked `revoked_at = now()`, new token issued.
 
 **Callback flow:**
+
 1. Exchange `code` with Google using `httpx`.
 2. Decode Google ID token, extract `sub` (google_id), `email`, `name`, `picture`.
 3. `INSERT ... ON CONFLICT (google_id) DO UPDATE` on `users`.
@@ -183,6 +192,7 @@ CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 ### 1.4 Auth Frontend
 
 **Pages/components:**
+
 - `/login` — "Continue with Google" button → `GET /api/v1/auth/google`
 - Auth context provider — stores access token in memory (React state/context, never localStorage)
 - Axios/fetch interceptor — on 401, silently calls `POST /api/v1/auth/refresh`, retries original request
@@ -192,6 +202,7 @@ CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 ---
 
 ### 1.5 Database Migration: Handle Table
+
 **Alembic migration creates:**
 
 ```sql
@@ -236,6 +247,7 @@ CREATE TABLE user_handles (
 | DELETE | `/api/v1/handles/{id}` | Unlink handle (soft-delete, keep analytics data) |
 
 **Initiate logic:**
+
 1. Call `https://codeforces.com/api/user.info?handles={handle}` — 404 → reject.
 2. Check no other verified account owns this handle → 409 if claimed.
 3. Generate token: `"PGS-" + secrets.token_hex(3).upper()` (e.g. `PGS-A3F9C2`). Hex-only avoids ambiguous chars; `PGS-` prefix is visually distinct in a CF profile.
@@ -243,6 +255,7 @@ CREATE TABLE user_handles (
 5. Return token + instructions.
 
 **Confirm logic:**
+
 1. Check token not expired (→ 410 Gone), handle not locked (→ 423 Locked).
 2. Call CF `user.info` again, read `result[0].lastName`.
 3. If `lastName == token` → mark verified, clear token.
@@ -254,6 +267,7 @@ CREATE TABLE user_handles (
 ### 1.7 Handle Verification Frontend
 
 **UI states:**
+
 - `NO_HANDLE` — form to enter CF handle + submit
 - `PENDING` — shows token prominently, step-by-step instructions, "I've done it — Check now" button
 - `SUCCESS` — "Handle verified!" confirmation, proceeds to dashboard
@@ -263,6 +277,7 @@ CREATE TABLE user_handles (
 ---
 
 ### Phase 1 Verification Checklist
+
 - [x] `GET /api/v1/health` → `200 OK` — health route wired in `routes/health.py`
 - [x] Google OAuth full round-trip (redirect → callback → JWT → cookie) — `upsert_user`, `create_session`, cookie set via `_set_refresh_cookie`; verified by `test_upsert_user_*` + `test_create_session_*`
 - [x] Silent token refresh works on 401 — `rotate_refresh_token` + dedup logic in `frontend/app/_lib/api.ts`; verified by `test_rotate_refresh_token_*`
@@ -276,11 +291,13 @@ CREATE TABLE user_handles (
 ---
 
 ## Phase 2 — Personal Analytics Engine
+
 **Goal:** Real dashboard data for a verified user — heatmap, streaks, tags, rating trend, recommendations.
 
 ### 2.1 Celery + CF Sync Worker
 
 **New DB tables (Alembic migration):**
+
 ```
 submissions          ← cf_submission_id, problem_id, verdict, submitted_at (UTC), ...
 submission_tags      ← submission_id FK, tag
@@ -290,23 +307,25 @@ rating_history       ← user_handle_id FK, cf_contest_id, old_rating, new_ratin
 ```
 
 **Sync task (`cf_sync.py`):**
+
 1. Fetch submissions where `submissionId > max(cf_submission_id)` (incremental). Full fetch if first sync.
 2. Sleep 2s between paginated API calls.
 3. Post-sync pipeline (in order): recompute `daily_activity` → `tag_stats` → `rating_history` → `weakness_signals` → `recommendations`.
 4. Update `user_handles.sync_status`, `last_synced_at`.
 
 **Manual sync endpoint:** `POST /api/v1/handles/{id}/sync`
+
 - Returns 429 if `now() - last_manual_sync_at < 30 minutes`.
 
 ---
 
 ### 2.2 Analytics API
 
-| Method | Path | Returns |
-|---|---|---|
-| GET | `/api/v1/analytics/dashboard` | heatmap grid (365 days), current_streak, longest_streak, total_solved, cf_rating |
-| GET | `/api/v1/analytics/tags` | array of tag_stats rows |
-| GET | `/api/v1/analytics/rating-history` | array of {contest_name, new_rating, contest_time} |
+| Method | Path                               | Returns                                                                          |
+| ------ | ---------------------------------- | -------------------------------------------------------------------------------- |
+| GET    | `/api/v1/analytics/dashboard`      | heatmap grid (365 days), current_streak, longest_streak, total_solved, cf_rating |
+| GET    | `/api/v1/analytics/tags`           | array of tag_stats rows                                                          |
+| GET    | `/api/v1/analytics/rating-history` | array of {contest_name, new_rating, contest_time}                                |
 
 All reads from derived tables. No raw aggregation.
 
@@ -315,6 +334,7 @@ All reads from derived tables. No raw aggregation.
 ### 2.3 Weakness + Recommendations Engine
 
 **New DB tables:**
+
 ```
 weakness_signals     ← user_handle_id FK, tag, signal_type, score, reason, computed_at
 recommendation_sets  ← user_id FK, generated_at
@@ -322,11 +342,13 @@ recommendations      ← recommendation_set_id FK, problem_id, problem_name, tag
 ```
 
 **Weakness rules:**
+
 - Neglected: `last_activity_at < now() - 14d` AND `solved_count >= 1`
 - Low success: `attempt_count >= 5` AND `acceptance_rate < 0.50`
 - Under-practiced: `solved_count < 5`
 
 **Recommendation algorithm:**
+
 1. Sort `weakness_signals` by score desc. Take top 5 distinct tags.
 2. For each tag: query CF problem set (cached) — filter by tag + difficulty in `[user_rating - 100, user_rating + 300]` + exclude solved.
 3. If no match: expand band ±200, retry once.
@@ -342,6 +364,7 @@ recommendations      ← recommendation_set_id FK, problem_id, problem_name, tag
 ---
 
 ### 2.4 Dashboard UI
+
 - Activity heatmap (GitHub-style, 52-week grid, client-side UTC→local)
 - Streak cards (current / longest)
 - Rating trend line chart (Recharts, time-series)
@@ -351,6 +374,7 @@ recommendations      ← recommendation_set_id FK, problem_id, problem_name, tag
 - Sync status pill + "Sync now" button (disabled during cooldown)
 
 ### Phase 2 Verification Checklist
+
 - [ ] Celery worker picks up task and completes full CF sync
 - [ ] `daily_activity` populated correctly (group by UTC date)
 - [ ] `tag_stats.acceptance_rate` computed correctly
@@ -362,19 +386,23 @@ recommendations      ← recommendation_set_id FK, problem_id, problem_name, tag
 ---
 
 ## Phase 3 — Contest Discovery
+
 **Goal:** Browseable, filterable contest list and calendar from CLIST.
 
 ### 3.1 CLIST Sync Worker
+
 - Register at clist.by for a free API key (add to `.env` as `CLIST_API_KEY`).
 - Celery beat task: every 4 hours, fetch contests for next 30 days.
 - Upsert into `contests` on `clist_id`.
 - Store `last_synced_at` in a `sync_metadata` table or a dedicated row.
 
 ### 3.2 Contest API
+
 - `GET /api/v1/contests` — query params: `platform` (repeatable), `from`, `to`, `limit`, `offset`
 - `GET /api/v1/contests/calendar` — same filters, response grouped by date
 
 ### 3.3 Contest UI
+
 - Contest list: platform badge, name, start/end time (local), duration, link
 - Platform filter chips (dynamic from distinct DB values)
 - Week/month calendar toggle (color-coded by platform)
@@ -382,6 +410,7 @@ recommendations      ← recommendation_set_id FK, problem_id, problem_name, tag
 - Stale data banner: shown if `now() - last_synced_at > 8 hours`
 
 ### Phase 3 Verification Checklist
+
 - [ ] CLIST Celery task runs on schedule and populates `contests`
 - [ ] Filtering by platform returns correct subset
 - [ ] All times displayed in user's local timezone
@@ -390,9 +419,11 @@ recommendations      ← recommendation_set_id FK, problem_id, problem_name, tag
 ---
 
 ## Phase 4 — Classroom System
+
 **Goal:** Teachers create classrooms; students join and see a transparent leaderboard.
 
 ### 4.1 DB Tables
+
 ```
 classrooms              ← name, owner_id FK, is_active
 classroom_invites       ← classroom_id FK, token, expires_at, revoked_at
@@ -401,6 +432,7 @@ classroom_leaderboard   ← precomputed cache (classroom_id, user_id, cf_rating,
 ```
 
 ### 4.2 Backend
+
 - Full CRUD per requirement.md §9.6
 - Invite: multi-use, 7-day expiry, revocable (does not remove existing members)
 - Join: requires `is_verified = true` on handle, else 403
@@ -408,6 +440,7 @@ classroom_leaderboard   ← precomputed cache (classroom_id, user_id, cf_rating,
 - Teacher-only endpoints: cohort analytics, member removal
 
 ### 4.3 Frontend
+
 - Create classroom form
 - Invite link share (copy to clipboard + QR optional)
 - Leaderboard table (sorted by CF rating desc)
@@ -416,6 +449,7 @@ classroom_leaderboard   ← precomputed cache (classroom_id, user_id, cf_rating,
 - Student: "My Classrooms" sidebar + leave button
 
 ### Phase 4 Verification Checklist
+
 - [ ] Classroom create/delete works
 - [ ] Invite link generates, works multi-use, expires after 7 days, revocation works
 - [ ] Student join blocked without verified handle
@@ -426,12 +460,14 @@ classroom_leaderboard   ← precomputed cache (classroom_id, user_id, cf_rating,
 ---
 
 ## Phase 5 — Mobile Companion [V2.0 — Not Yet Planned]
+
 Flutter app. Starts only after Phase 4 is verified and signed off.
 Scope: contest discovery, local alarms (`flutter_local_notifications` + `workmanager`), quick dashboard, offline SQLite cache.
 
 ---
 
 ## Phase 6 — AI Layer [V3.0 — Not Yet Planned]
+
 LLM coaching. Reads pre-formatted JSON weakness/performance vectors from Phase 2 engine.
 Starts after Phase 5 or as a parallel track.
 
@@ -442,16 +478,19 @@ Starts after Phase 5 or as a parallel track.
 Two services in `railway.toml`:
 
 **`web`** — FastAPI via uvicorn:
+
 ```
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
 **`worker`** — Celery:
+
 ```
 celery -A app.workers.celery_app worker --loglevel=info
 ```
 
 **`beat`** — Celery beat scheduler (can run alongside worker or as separate service):
+
 ```
 celery -A app.workers.celery_app beat --loglevel=info
 ```
@@ -461,6 +500,7 @@ Railway provides: PostgreSQL plugin + Redis plugin. Connection strings injected 
 ---
 
 ## Execution Protocol (from CLAUDE.md)
+
 1. **One slice at a time.** Phase N+1 only after Phase N checklist is fully green.
 2. **Design before code.** For each task: schema → API contract → logic flow → approval → implement.
 3. **Update `PROGRESS.md`** at the end of every session (mark DONE/IN_PROGRESS/TODO, log decisions).

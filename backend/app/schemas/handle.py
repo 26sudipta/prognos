@@ -48,3 +48,8 @@ class HandleResponse(BaseModel):
 class ConfirmErrorResponse(BaseModel):
     detail: str
     attempts_remaining: int
+
+
+class SyncResponse(BaseModel):
+    task_id: str
+    handle_id: uuid.UUID
