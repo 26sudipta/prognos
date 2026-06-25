@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 3 — In Progress (3.1 + 3.2 done). 3.3 (Contest UI) next.
-**Last Updated:** 2026-06-23 (Phase 2.6)
+## Current Status: Phase 3 — In Progress (3.1 + 3.2 done, post-review fixes applied). 3.3 (Contest UI) next.
+**Last Updated:** 2026-06-24 (Phase 3.2 review)
 
 ---
 
@@ -396,6 +396,22 @@ Full audit of Phase 2 against `requirement.md` and `implementation.md`. All issu
 - Route order: `/calendar` and `/platforms` before any future `/{id}` param route to prevent FastAPI path-capture collision.
 
 **Test count:** 94 passed (was 78)
+
+### 3.2 Post-Review Fixes [DONE]
+**Completed:** 2026-06-24
+
+Four bugs found and fixed during a line-by-line audit of Phase 3 code before Phase 3.3 started.
+
+| Bug | Fix |
+|---|---|
+| Pagination tiebreaker missing — `ORDER BY start_time` is non-deterministic on ties; `offset` pages could skip/duplicate rows when contests share a start time | Added `clist_id ASC` as secondary sort key in `get_contests` and `get_contests_calendar` |
+| Live contests disappeared at `start_time` — filter `start_time >= now` ejected a running contest the instant it began | Changed lower bound to `end_time > from_dt`; confirmed by user: running contests should stay visible until they end |
+| `get_platforms` returned all-time platforms (including past/expired contests) — clicking a stale chip yields an empty list | Scoped query to `end_time > now AND start_time <= now+30d` to match the default list window |
+| Naive datetime query params — FastAPI parses `?from_dt=2026-07-01T00:00:00` (no tz suffix) as a naive datetime; asyncpg comparison against TIMESTAMPTZ is implicit | Added `_ensure_utc()` helper that attaches UTC tzinfo to any incoming naive datetime before it hits the query |
+
+New test: `test_get_contests_pagination_stable_with_tied_start_times` — 4 contests with identical start times, verifies page1 ∪ page2 = all 4 with no overlaps.
+
+**Test count:** 95 passed (was 94)
 
 ---
 

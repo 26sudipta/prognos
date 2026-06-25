@@ -11,7 +11,7 @@ from app.models.analytics import Contest
 from app.services.contests import get_contests, get_contests_calendar, get_platforms
 
 # Test clist_ids kept in a dedicated range to avoid collisions
-_TEST_IDS = list(range(8000, 8010))
+_TEST_IDS = list(range(8000, 8020))
 
 
 def _make_contest_row(
@@ -157,6 +157,40 @@ async def test_get_contests_calendar_platform_filter(db_session: AsyncSession, s
 # ---------------------------------------------------------------------------
 # get_platforms
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_contests_pagination_stable_with_tied_start_times(db_session: AsyncSession):
+    """Pagination must be deterministic when multiple contests share the same start_time."""
+    same_start = datetime(2026, 7, 10, 10, 0, 0, tzinfo=UTC)
+    rows = [
+        Contest(
+            clist_id=8010 + i,
+            platform="codeforces.com",
+            name=f"Tie Contest {i}",
+            start_time=same_start,
+            end_time=same_start + timedelta(hours=2),
+            duration_seconds=7200,
+            url=f"https://example.com/tie/{i}",
+            last_synced_at=datetime.now(UTC),
+        )
+        for i in range(4)
+    ]
+    for r in rows:
+        db_session.add(r)
+    await db_session.commit()
+
+    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
+    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
+
+    page1 = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=2, offset=0)
+    page2 = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=2, offset=2)
+
+    ids_page1 = {c.clist_id for c in page1.contests}
+    ids_page2 = {c.clist_id for c in page2.contests}
+    # No row appears on both pages, no row is missing
+    assert ids_page1.isdisjoint(ids_page2)
+    assert ids_page1 | ids_page2 == {8010, 8011, 8012, 8013}
 
 
 @pytest.mark.asyncio

@@ -123,6 +123,63 @@ curl http://localhost:8000/openapi.json | python -m json.tool | grep '"/api/v1/c
 
 ---
 
+## Updates
+
+### Post-implementation code review fixes
+
+Four bugs found and fixed during a line-by-line review before Phase 3.3 started.
+
+**1. Pagination tiebreaker (`get_contests`, `get_contests_calendar`)**
+
+`ORDER BY start_time ASC` is non-deterministic when multiple contests share the same start time (common: CF Div1+Div2 fire simultaneously; many platforms schedule at 00:00 UTC). Without a second sort key, Postgres can return different orderings across two otherwise identical queries. An `offset`-based page boundary landing on a tie would skip or duplicate rows.
+
+Fix: added `clist_id ASC` as a secondary sort key. `clist_id` is unique so it breaks all ties deterministically.
+
+```python
+# before
+base_q.order_by(Contest.start_time.asc())
+
+# after
+base_q.order_by(Contest.start_time.asc(), Contest.clist_id.asc())
+```
+
+New integration test `test_get_contests_pagination_stable_with_tied_start_times` seeds 4 contests with identical start times and verifies page1 ∪ page2 = all 4 with no overlaps.
+
+**2. Live contests disappearing at `start_time` (`get_contests`, `get_contests_calendar`)**
+
+The original filter `start_time >= now` caused a contest to vanish from the list the instant it began, even if it was still running (e.g. a 5-hour CF round). Confirmed user preference: live contests should remain visible until they end.
+
+Fix: changed lower bound from `start_time >= from_dt` to `end_time > from_dt`. A contest now stays in the result set as long as `end_time` is in the future relative to the requested window start.
+
+```python
+# before
+Contest.start_time >= from_dt,
+
+# after — live contests (started but not yet finished) remain visible
+Contest.end_time > from_dt,
+```
+
+**3. `get_platforms` returned all-time platforms, not upcoming ones**
+
+The original query `SELECT DISTINCT platform FROM contests` ignores date. Over time, past contests accumulate in the table (no cleanup job exists). Platform filter chips derived from this query would eventually include platforms with zero upcoming contests — clicking one yields an empty list.
+
+Fix: scoped the query to the same window as the list endpoint (`end_time > now AND start_time <= now+30d`), so chips always reflect platforms that have at least one visible contest.
+
+**4. Naive datetime normalization (`_ensure_utc`)**
+
+FastAPI parses `datetime` query params without a timezone suffix (e.g. `?from_dt=2026-07-01T00:00:00`) as naive datetimes. When asyncpg binds a naive datetime against a `TIMESTAMPTZ` column, the session timezone interpretation is implicit. Fix: added `_ensure_utc(dt)` helper that attaches `UTC` to any incoming naive datetime before it reaches the query.
+
+```python
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+```
+
+Test count after fixes: **95** (was 94; new tiebreaker integration test added).
+
+---
+
 ## Next
 
 **Phase 3.3** — Contest UI: `frontend/app/(dashboard)/contests/page.tsx` with countdown header, platform filter chips, list view (cards grouped by date, live countdown for <24h contests), and calendar week view.

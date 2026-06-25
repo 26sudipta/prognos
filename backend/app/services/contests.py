@@ -26,6 +26,12 @@ def _default_window() -> tuple[datetime, datetime]:
     return now, now + timedelta(days=30)
 
 
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 async def get_contests(
     db: AsyncSession,
     platform: str | None,
@@ -35,11 +41,12 @@ async def get_contests(
     offset: int,
 ) -> ContestsListResponse:
     now, window_end = _default_window()
-    from_dt = from_dt or now
-    to_dt = to_dt or window_end
+    from_dt = _ensure_utc(from_dt) or now
+    to_dt = _ensure_utc(to_dt) or window_end
 
+    # end_time > from_dt keeps live contests (already started, not yet finished) visible
     base_q = select(Contest).where(
-        Contest.start_time >= from_dt,
+        Contest.end_time > from_dt,
         Contest.start_time <= to_dt,
     )
     if platform:
@@ -49,7 +56,7 @@ async def get_contests(
 
     rows = (
         await db.execute(
-            base_q.order_by(Contest.start_time.asc()).limit(limit).offset(offset)
+            base_q.order_by(Contest.start_time.asc(), Contest.clist_id.asc()).limit(limit).offset(offset)
         )
     ).scalars().all()
 
@@ -67,16 +74,16 @@ async def get_contests_calendar(
     to_dt: datetime | None,
 ) -> ContestsCalendarResponse:
     now, window_end = _default_window()
-    from_dt = from_dt or now
-    to_dt = to_dt or window_end
+    from_dt = _ensure_utc(from_dt) or now
+    to_dt = _ensure_utc(to_dt) or window_end
 
     q = select(Contest).where(
-        Contest.start_time >= from_dt,
+        Contest.end_time > from_dt,
         Contest.start_time <= to_dt,
     )
     if platform:
         q = q.where(Contest.platform == platform)
-    q = q.order_by(Contest.start_time.asc())
+    q = q.order_by(Contest.start_time.asc(), Contest.clist_id.asc())
 
     rows = (await db.execute(q)).scalars().all()
 
@@ -91,9 +98,13 @@ async def get_contests_calendar(
 
 
 async def get_platforms(db: AsyncSession) -> list[str]:
+    now, window_end = _default_window()
     rows = (
         await db.execute(
-            select(Contest.platform).distinct().order_by(Contest.platform.asc())
+            select(Contest.platform)
+            .where(Contest.end_time > now, Contest.start_time <= window_end)
+            .distinct()
+            .order_by(Contest.platform.asc())
         )
     ).scalars().all()
     return list(rows)
