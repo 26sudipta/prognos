@@ -1,6 +1,6 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 2 — Complete (2.7 done). Phase 3 next.
+## Current Status: Phase 3 — In Progress (3.1 + 3.2 done). 3.3 (Contest UI) next.
 **Last Updated:** 2026-06-23 (Phase 2.6)
 
 ---
@@ -376,7 +376,29 @@ Full audit of Phase 2 against `requirement.md` and `implementation.md`. All issu
 
 ---
 
-### 3.2 Contest API [TODO]
+### 3.2 Contest API [DONE]
+**Completed:** 2026-06-24
+
+**Files created/modified:**
+- `backend/app/schemas/contests.py` — NEW: `ContestItem`, `ContestsListResponse`, `CalendarDay`, `ContestsCalendarResponse`
+- `backend/app/services/contests.py` — NEW: `get_contests`, `get_contests_calendar`, `get_platforms`, `_is_stale` helper
+- `backend/app/api/v1/routes/contests.py` — NEW: 3 route handlers (`GET /contests`, `GET /contests/calendar`, `GET /contests/platforms`)
+- `backend/app/api/v1/__init__.py` — `contests_router` included
+- `backend/tests/unit/test_contests_service.py` — 8 unit tests (_is_stale thresholds, calendar grouping, platforms)
+- `backend/tests/integration/test_contests_routes.py` — 8 integration tests (list, filter, pagination, sort, calendar, platforms)
+- `docs/phase_3_2.md` — phase documentation
+
+**Technical decisions:**
+- All 3 endpoints require `get_current_user` for consistency (contest page is inside the app shell; no reason for a public route exception).
+- Stale detection: `MAX(last_synced_at) > 8h ago` — two missed 4h sync cycles. Returned as `is_stale: bool` in response body so frontend can show amber banner.
+- Calendar grouping done in Python (not SQL) — keeps DB query simple; timezone conversion is a presentation concern for the frontend.
+- `total` included in list response (for pagination display) but not in calendar response (all-at-once rendering).
+- Route order: `/calendar` and `/platforms` before any future `/{id}` param route to prevent FastAPI path-capture collision.
+
+**Test count:** 94 passed (was 78)
+
+---
+
 ### 3.3 Contest UI [TODO]
 ## Phase 4 — Classroom System [TODO]
 ## Phase 5 — Mobile Companion [TODO]
