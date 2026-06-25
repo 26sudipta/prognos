@@ -224,7 +224,25 @@
 - `cf_rating` derived from `rating_history.new_rating ORDER BY contest_time DESC LIMIT 1` — same source as sync worker.
 - No handle → graceful empty/zero response (not 404).
 - All 58 tests passing.
-### 2.3 Weakness + Recommendations Engine [TODO]
+### 2.3 Weakness + Recommendations Engine [DONE]
+**Completed:** 2026-06-25
+
+**Files created/modified:**
+- `backend/app/schemas/analytics.py` — added `WeaknessSignalResponse`, `RecommendationResponse`, `RecommendationSetResponse`
+- `backend/app/services/analytics.py` — added `get_weaknesses`, `get_recommendations`
+- `backend/app/api/v1/routes/analytics.py` — 2 new GET route handlers
+- `backend/tests/integration/test_weaknesses_recommendations.py` — 8 integration tests
+- `docs/phase_2_3.md` — phase documentation
+
+**Endpoints added:**
+- `GET /api/v1/analytics/weaknesses` — weakness_signals for user's handles, sorted by score DESC; `[]` when no handle or no signals
+- `GET /api/v1/analytics/recommendations` — most recent recommendation_set with nested recommendations sorted by position; `null` when no set exists
+
+**Technical decisions:**
+- WeaknessSignal queried via handle_ids (per-handle granularity); RecommendationSet queried directly by user_id (user-level granularity) — mirrors the schema design from Phase 2.1.
+- `/recommendations` returns `null` (not `[]`) for no-data: communicates "sync hasn't run yet" vs. "exists but empty".
+- `recommendations` child list loaded via `selectin` (ORM relationship), sorted in-memory by `position` — avoids modifying relationship declaration just for ordering.
+- All 66 tests passing.
 ### 2.4 Dashboard UI [TODO]
 
 ## Phase 3 — Contest Discovery [TODO]
