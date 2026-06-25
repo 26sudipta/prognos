@@ -347,7 +347,37 @@ Full audit of Phase 2 against `requirement.md` and `implementation.md`. All issu
 
 ---
 
-## Phase 3 — Contest Discovery [TODO]
+## Phase 3 — Contest Discovery [IN_PROGRESS]
+
+### 3.1 CLIST Sync Worker + DB [DONE]
+**Completed:** 2026-06-25
+
+**Files created/modified:**
+- `backend/app/models/analytics.py` — `Contest` ORM model added (`TimestampMixin`, `clist_id` BIGINT UNIQUE)
+- `backend/app/models/__init__.py` — `Contest` exported
+- `backend/alembic/versions/005_add_contests_table.py` — migration: `contests` table + `uq_contests_clist_id` + `idx_contests_start_time`
+- `backend/app/workers/clist_sync.py` — NEW: `sync_clist_contests` Celery task; `_run_sync`, `_fetch_contests`, `_map_contest` helpers
+- `backend/app/workers/celery_app.py` — `clist_sync` module included; beat entry: every 4h
+- `backend/app/core/config.py` — `CLIST_USERNAME`, `CLIST_API_KEY` added (default empty strings)
+- `backend/.env.example` — CLIST vars documented
+- `backend/tests/unit/test_clist_sync.py` — 8 unit tests
+- `backend/tests/integration/test_clist_sync_integration.py` — 3 integration tests (insert, upsert-on-conflict, created_at preservation)
+- `docs/phase_3_1.md` — phase documentation
+
+**Technical decisions:**
+- Separate `clist_sync.py` from `cf_sync.py`: global vs per-user concern; different beat schedules (4h vs 6h).
+- Upsert key is `clist_id` (CLIST's stable integer), not UUID PK — keeps our UUID stable even when contest metadata changes.
+- `created_at` excluded from `ON CONFLICT DO UPDATE SET` — preserves original insertion time across unlimited refreshes.
+- Async pattern (`asyncio.run` + `asyncpg`) — avoids adding `psycopg2` as a second driver; consistent with `cf_sync.py`.
+- Graceful degradation at `_fetch_contests` level (not just Celery retry) — makes the "no DB write on API error" path unit-testable.
+- `CLIST_USERNAME` and `CLIST_API_KEY` default to empty strings so the app boots without them; sync will simply fail gracefully until credentials are added.
+
+**Test count:** 78 passed (was 67)
+
+---
+
+### 3.2 Contest API [TODO]
+### 3.3 Contest UI [TODO]
 ## Phase 4 — Classroom System [TODO]
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]

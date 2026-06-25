@@ -127,3 +127,21 @@ class RatingHistory(Base):
     contest_time: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
 
     handle: Mapped["UserHandle"] = relationship("UserHandle", lazy="noload")
+
+
+class Contest(TimestampMixin, Base):
+    __tablename__ = "contests"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    clist_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    platform: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    start_time: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, index=True)
+    end_time: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    last_synced_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)

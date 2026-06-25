@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     JWT_ACCESS_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_EXPIRE_DAYS: int = 7
 
+    # CLIST — contest discovery
+    CLIST_USERNAME: str = ""
+    CLIST_API_KEY: str = ""
+
     # App
     FRONTEND_URL: str = "http://localhost:3000"
     ENVIRONMENT: str = "development"

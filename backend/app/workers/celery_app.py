@@ -7,7 +7,7 @@ celery_app = Celery(
     "prognos",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.workers.cf_sync"],
+    include=["app.workers.cf_sync", "app.workers.clist_sync"],
 )
 
 celery_app.conf.update(
@@ -25,5 +25,10 @@ celery_app.conf.beat_schedule = {
     "cf-sync-all-handles": {
         "task": "app.workers.cf_sync.sync_all_handles",
         "schedule": crontab(minute=0, hour="*/6"),
+    },
+    # Sync upcoming contests from CLIST every 4 hours
+    "clist-sync-contests": {
+        "task": "app.workers.clist_sync.sync_clist_contests",
+        "schedule": crontab(minute=0, hour="*/4"),
     },
 }
