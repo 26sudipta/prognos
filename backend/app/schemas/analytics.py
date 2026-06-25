@@ -1,6 +1,9 @@
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel
+
+from app.models.signals import WeaknessSignalType
 
 
 class HeatmapDay(BaseModel):
@@ -34,5 +37,37 @@ class RatingHistoryResponse(BaseModel):
     delta: int
     rank: int
     contest_time: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WeaknessSignalResponse(BaseModel):
+    id: uuid.UUID
+    tag: str
+    signal_type: WeaknessSignalType
+    score: float
+    reason: str
+    computed_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RecommendationResponse(BaseModel):
+    id: uuid.UUID
+    problem_id: str
+    problem_name: str
+    tag: str
+    difficulty: int
+    url: str
+    reason: str
+    position: int
+
+    model_config = {"from_attributes": True}
+
+
+class RecommendationSetResponse(BaseModel):
+    id: uuid.UUID
+    generated_at: datetime
+    recommendations: list[RecommendationResponse]
 
     model_config = {"from_attributes": True}

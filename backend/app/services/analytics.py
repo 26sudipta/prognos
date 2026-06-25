@@ -5,12 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import DailyActivity, RatingHistory, TagStats
+from app.models.signals import RecommendationSet, WeaknessSignal
 from app.models.user_handle import UserHandle
 from app.schemas.analytics import (
     DashboardResponse,
     HeatmapDay,
     RatingHistoryResponse,
+    RecommendationSetResponse,
     TagStatsResponse,
+    WeaknessSignalResponse,
 )
 
 
@@ -137,3 +140,37 @@ async def get_rating_history(db: AsyncSession, user_id: uuid.UUID) -> list[Ratin
     ).scalars().all()
 
     return [RatingHistoryResponse.model_validate(r) for r in rows]
+
+
+async def get_weaknesses(db: AsyncSession, user_id: uuid.UUID) -> list[WeaknessSignalResponse]:
+    handle_ids = await _get_handle_ids(db, user_id)
+    if not handle_ids:
+        return []
+
+    rows = (
+        await db.execute(
+            select(WeaknessSignal)
+            .where(WeaknessSignal.user_handle_id.in_(handle_ids))
+            .order_by(WeaknessSignal.score.desc())
+        )
+    ).scalars().all()
+
+    return [WeaknessSignalResponse.model_validate(r) for r in rows]
+
+
+async def get_recommendations(db: AsyncSession, user_id: uuid.UUID) -> RecommendationSetResponse | None:
+    row = (
+        await db.execute(
+            select(RecommendationSet)
+            .where(RecommendationSet.user_id == user_id)
+            .order_by(RecommendationSet.generated_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        return None
+
+    # recommendations are selectin-loaded; sort by position
+    row.recommendations.sort(key=lambda r: r.position)
+    return RecommendationSetResponse.model_validate(row)
