@@ -14,7 +14,7 @@ router = APIRouter(prefix="/contests", tags=["contests"])
 
 @router.get("", response_model=ContestsListResponse)
 async def list_contests(
-    platform: str | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
     from_dt: datetime | None = Query(default=None),
     to_dt: datetime | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
@@ -27,7 +27,7 @@ async def list_contests(
 
 @router.get("/calendar", response_model=ContestsCalendarResponse)
 async def contests_calendar(
-    platform: str | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
     from_dt: datetime | None = Query(default=None),
     to_dt: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),

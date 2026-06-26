@@ -4,7 +4,7 @@ import { ExternalLink } from "lucide-react";
 import {
   type ContestItem,
   formatLocalDateTimeShort,
-  formatLocalTimeOnly,
+  formatLocalEndLabel,
   formatDuration,
   platformColor,
   platformDisplayName,
@@ -32,7 +32,7 @@ function HeroStrip({ contest }: { contest: ContestItem }) {
   const color = platformColor(contest.platform);
   const displayName = platformDisplayName(contest.platform);
   const startLabel = formatLocalDateTimeShort(contest.start_time);
-  const endLabel = formatLocalTimeOnly(contest.end_time);
+  const endLabel = formatLocalEndLabel(contest.start_time, contest.end_time);
   const duration = formatDuration(contest.duration_seconds);
 
   return (

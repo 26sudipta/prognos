@@ -141,6 +141,14 @@ export function localDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// End-time label that includes the date when the contest crosses midnight locally
+export function formatLocalEndLabel(startIsoStr: string, endIsoStr: string): string {
+  if (localDateKey(new Date(startIsoStr)) === localDateKey(new Date(endIsoStr))) {
+    return formatLocalTimeOnly(endIsoStr);
+  }
+  return formatLocalDateTimeShort(endIsoStr);
+}
+
 // "2h", "2h 15m", "45m"
 export function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   type ContestItem,
@@ -139,6 +139,8 @@ function CalendarDayCell({
   onContestClick: (c: ContestItem) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Reset expansion when contests change (e.g. platform filter changed)
+  useEffect(() => { setExpanded(false); }, [contests]);
   const isToday = localDateKey(date) === localDateKey(new Date());
   const overflow = contests.length - MAX_VISIBLE;
   const visible = expanded ? contests : contests.slice(0, MAX_VISIBLE);

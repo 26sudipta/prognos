@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   type ContestItem,
   formatLocalDateTimeLong,
-  formatLocalTimeOnly,
+  formatLocalEndLabel,
   formatDuration,
   platformDisplayName,
 } from "@/app/_lib/contests";
@@ -19,14 +19,15 @@ interface Props {
 }
 
 export function ContestDetailModal({ contest, onClose }: Props) {
-  // Close on Escape key
+  // Close on Escape — only register while the modal is open
   useEffect(() => {
+    if (!contest) return;
     function handler(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [contest, onClose]);
 
   return (
     <AnimatePresence>
@@ -67,7 +68,7 @@ export function ContestDetailModal({ contest, onClose }: Props) {
 
 function ModalContent({ contest, onClose }: { contest: ContestItem; onClose: () => void }) {
   const startLong = formatLocalDateTimeLong(contest.start_time);
-  const endTime = formatLocalTimeOnly(contest.end_time);
+  const endTime = formatLocalEndLabel(contest.start_time, contest.end_time);
   const duration = formatDuration(contest.duration_seconds);
   const platform = platformDisplayName(contest.platform);
 

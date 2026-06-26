@@ -77,11 +77,25 @@ async def test_get_contests_filters_by_platform(db_session: AsyncSession, seeded
     to_dt = datetime(2026, 8, 1, tzinfo=UTC)
 
     result = await get_contests(
-        db_session, platform="codeforces.com", from_dt=from_dt, to_dt=to_dt, limit=50, offset=0
+        db_session, platform=["codeforces.com"], from_dt=from_dt, to_dt=to_dt, limit=50, offset=0
     )
 
     assert result.total == 2
     assert all(c.platform == "codeforces.com" for c in result.contests)
+
+
+@pytest.mark.asyncio
+async def test_get_contests_filters_by_multiple_platforms(db_session: AsyncSession, seeded_contests):
+    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
+    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
+
+    result = await get_contests(
+        db_session, platform=["codeforces.com", "atcoder.jp"], from_dt=from_dt, to_dt=to_dt, limit=50, offset=0
+    )
+
+    assert result.total == 4
+    platforms_found = {c.platform for c in result.contests}
+    assert platforms_found == {"codeforces.com", "atcoder.jp"}
 
 
 @pytest.mark.asyncio
@@ -148,7 +162,7 @@ async def test_get_contests_calendar_platform_filter(db_session: AsyncSession, s
     from_dt = datetime(2026, 7, 1, tzinfo=UTC)
     to_dt = datetime(2026, 8, 1, tzinfo=UTC)
 
-    result = await get_contests_calendar(db_session, platform="atcoder.jp", from_dt=from_dt, to_dt=to_dt)
+    result = await get_contests_calendar(db_session, platform=["atcoder.jp"], from_dt=from_dt, to_dt=to_dt)
 
     all_platforms = {c.platform for day in result.days for c in day.contests}
     assert all_platforms == {"atcoder.jp"}
@@ -194,7 +208,35 @@ async def test_get_contests_pagination_stable_with_tied_start_times(db_session: 
 
 
 @pytest.mark.asyncio
-async def test_get_platforms_returns_distinct_sorted(db_session: AsyncSession, seeded_contests):
+async def test_get_platforms_returns_distinct_sorted(db_session: AsyncSession):
+    """Platforms live in the now-to-now+30d window; seed with relative offsets so this never expires."""
+    now = datetime.now(UTC)
+    rows = [
+        Contest(
+            clist_id=8016,
+            platform="codeforces.com",
+            name="Future CF",
+            start_time=now + timedelta(days=1),
+            end_time=now + timedelta(days=1, hours=2),
+            duration_seconds=7200,
+            url="https://example.com/8016",
+            last_synced_at=now,
+        ),
+        Contest(
+            clist_id=8017,
+            platform="atcoder.jp",
+            name="Future AC",
+            start_time=now + timedelta(days=2),
+            end_time=now + timedelta(days=2, hours=2),
+            duration_seconds=7200,
+            url="https://example.com/8017",
+            last_synced_at=now,
+        ),
+    ]
+    for r in rows:
+        db_session.add(r)
+    await db_session.commit()
+
     platforms = await get_platforms(db_session)
 
     # Must include both seeded platforms

@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 3 — DONE (3.1 + 3.2 + 3.3 complete). Phase 4 (Classroom System) next.
-**Last Updated:** 2026-06-24 (Phase 3.3 Contest UI)
+## Current Status: Phase 3 — DONE + QA audited. Phase 4 (Classroom System) next.
+**Last Updated:** 2026-06-25 (Phase 3 QA audit — 4 bugs fixed)
 
 ---
 
@@ -347,7 +347,7 @@ Full audit of Phase 2 against `requirement.md` and `implementation.md`. All issu
 
 ---
 
-## Phase 3 — Contest Discovery [IN_PROGRESS]
+## Phase 3 — Contest Discovery [DONE]
 
 ### 3.1 CLIST Sync Worker + DB [DONE]
 **Completed:** 2026-06-25
@@ -443,6 +443,27 @@ New test: `test_get_contests_pagination_stable_with_tied_start_times` — 4 cont
 - TypeScript build clean; ESLint clean on all new files.
 
 **Test count:** 95 (frontend has no automated test framework; verification is TypeScript build + ESLint + manual browser check)
+
+---
+
+### 3 QA Audit [DONE]
+**Completed:** 2026-06-25
+
+Full audit of all Phase 3 code (backend + frontend). Four bugs found and fixed.
+
+| # | Severity | Bug | Fix |
+|---|---|---|---|
+| 1 | Critical | Multi-platform filter silently broken — `platform: str \| None` in route accepted only one value; frontend sends `?platform=a&platform=b` for multi-select | Changed to `list[str] \| None = Query(default=None)` in both list and calendar routes; service now uses `Contest.platform.in_(platform)` |
+| 2 | Correctness | Multi-day contest end time shows no date — `"Sat Jul 12 · 17:35 – 02:00"` looks same-day even for a 33h contest | Added `formatLocalEndLabel(start, end)` to `_lib/contests.ts`: same-day → time only; different day → `"Sun, Jul 13 · 02:00"`. Applied in card, hero strip, and modal |
+| 3 | UX | `CalendarDayCell` expanded state persisted across platform filter changes — "+N more" stays open even after filter produces fewer contests | Added `useEffect(() => { setExpanded(false); }, [contests])` in `CalendarDayCell` |
+| 4 | Performance | Escape key listener registered even when modal is closed — inline `onClose` arrow changed identity on every parent render, causing listener re-registration | Added `if (!contest) return` guard at effect top; added `contest` to deps so listener only lives while modal is open |
+
+**Test additions:**
+- `test_get_contests_filters_by_multiple_platforms` — new integration test verifying `platform=["cf","ac"]` returns contests from both platforms
+- `test_get_platforms_returns_distinct_sorted` — rewritten with relative `now + N days` offsets (was hardcoded Jul 2026 dates, would have expired Jul 4 2026)
+- All existing tests updated: single-platform calls changed from `platform="x"` → `platform=["x"]` to match new `list[str]` signature
+
+**Test count:** 96 passed (was 95)
 
 ---
 

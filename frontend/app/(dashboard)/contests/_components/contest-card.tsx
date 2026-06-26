@@ -4,7 +4,7 @@ import { ExternalLink } from "lucide-react";
 import {
   type ContestItem,
   formatLocalDateTimeShort,
-  formatLocalTimeOnly,
+  formatLocalEndLabel,
   formatDuration,
 } from "@/app/_lib/contests";
 import { PlatformBadge } from "./platform-badge";
@@ -25,7 +25,7 @@ export function ContestCard({ contest, onClick }: Props) {
     : "border-l-border-subtle";
 
   const startLabel = formatLocalDateTimeShort(contest.start_time);
-  const endLabel = formatLocalTimeOnly(contest.end_time);
+  const endLabel = formatLocalEndLabel(contest.start_time, contest.end_time);
   const duration = formatDuration(contest.duration_seconds);
 
   return (

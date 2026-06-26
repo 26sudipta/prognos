@@ -34,7 +34,7 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
 
 async def get_contests(
     db: AsyncSession,
-    platform: str | None,
+    platform: list[str] | None,
     from_dt: datetime | None,
     to_dt: datetime | None,
     limit: int,
@@ -50,7 +50,7 @@ async def get_contests(
         Contest.start_time <= to_dt,
     )
     if platform:
-        base_q = base_q.where(Contest.platform == platform)
+        base_q = base_q.where(Contest.platform.in_(platform))
 
     total = await db.scalar(select(func.count()).select_from(base_q.subquery()))
 
@@ -69,7 +69,7 @@ async def get_contests(
 
 async def get_contests_calendar(
     db: AsyncSession,
-    platform: str | None,
+    platform: list[str] | None,
     from_dt: datetime | None,
     to_dt: datetime | None,
 ) -> ContestsCalendarResponse:
@@ -82,7 +82,7 @@ async def get_contests_calendar(
         Contest.start_time <= to_dt,
     )
     if platform:
-        q = q.where(Contest.platform == platform)
+        q = q.where(Contest.platform.in_(platform))
     q = q.order_by(Contest.start_time.asc(), Contest.clist_id.asc())
 
     rows = (await db.execute(q)).scalars().all()

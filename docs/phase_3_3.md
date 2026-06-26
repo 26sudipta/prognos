@@ -172,6 +172,93 @@ npm run dev
 
 ---
 
+## Updates
+
+### QA Audit — 4 bugs fixed (2026-06-25)
+
+A full post-implementation audit of all Phase 3 code was performed. Four bugs were identified and fixed.
+
+---
+
+#### Bug 1 (Critical): Multi-platform filter silently discarded extra values
+
+**Root cause.** The route declared `platform: str | None = Query(default=None)`. When the frontend sends `?platform=codeforces.com&platform=atcoder.jp` (one `append` per selected platform), FastAPI only captured the first value; the rest were silently dropped. Selecting two platforms returned only one.
+
+**Fix.**
+
+```python
+# routes/contests.py — both list_contests and contests_calendar
+platform: list[str] | None = Query(default=None),
+
+# services/contests.py — both get_contests and get_contests_calendar
+if platform:
+    base_q = base_q.where(Contest.platform.in_(platform))
+```
+
+All integration tests that passed a bare string (`platform="codeforces.com"`) were updated to pass a list (`platform=["codeforces.com"]`). A new test — `test_get_contests_filters_by_multiple_platforms` — verifies that two platforms both appear in the result.
+
+---
+
+#### Bug 2 (Correctness): Multi-day contest end time shows no date
+
+**Root cause.** All three surfaces — contest card (`"Sat, Jul 12 · 17:35 – 02:00"`), hero strip, and modal ("Ends: 02:00") — called `formatLocalTimeOnly(end_time)`. For a contest that crosses midnight or runs 24+ hours (CodeChef Long Challenge, ICPC), this is ambiguous and wrong: "02:00" looks like 2 AM the same night, but the contest ends two days later.
+
+**Fix.** New utility added to `_lib/contests.ts`:
+
+```typescript
+export function formatLocalEndLabel(startIsoStr: string, endIsoStr: string): string {
+  if (localDateKey(new Date(startIsoStr)) === localDateKey(new Date(endIsoStr))) {
+    return formatLocalTimeOnly(endIsoStr);         // same local day: "02:00"
+  }
+  return formatLocalDateTimeShort(endIsoStr);       // different day: "Sun, Jul 13 · 02:00"
+}
+```
+
+Applied in `contest-card.tsx`, `next-contest-hero.tsx`, and `contest-detail-modal.tsx`.
+
+---
+
+#### Bug 3 (UX): `CalendarDayCell` expanded state not reset on filter change
+
+**Root cause.** `CalendarDayCell` has local `useState(false)` for the "+N more" expand toggle. Since it is keyed by day index (0–6), the component instance persists across filter changes. A user could expand Wednesday, change the platform filter (which triggers a new fetch and updates the `contests` prop), and still see the "+N more" expanded view even though the contests array had changed.
+
+**Fix.** Added effect in `CalendarDayCell`:
+
+```typescript
+useEffect(() => { setExpanded(false); }, [contests]);
+```
+
+The `contests` reference changes on every new fetch, so the effect fires on any filter or week change, collapsing the cell automatically.
+
+---
+
+#### Bug 4 (Performance): Escape listener registered while modal is closed
+
+**Root cause.** The `useEffect` in `ContestDetailModal` added the `keydown` listener unconditionally. The `onClose` dependency is an inline arrow defined in `page.tsx` — it gets a new reference on every parent render, so the listener was being removed and re-added repeatedly even when the modal was closed. Any Escape keypress while the modal was closed called `setSelectedContest(null)` (a no-op), but still triggered an unnecessary React re-render.
+
+**Fix.**
+
+```typescript
+useEffect(() => {
+  if (!contest) return; // only register while modal is open
+  function handler(e: KeyboardEvent) {
+    if (e.key === "Escape") onClose();
+  }
+  document.addEventListener("keydown", handler);
+  return () => document.removeEventListener("keydown", handler);
+}, [contest, onClose]);
+```
+
+Adding `contest` to deps causes the listener to be registered only when `contest` is non-null and cleaned up when it becomes null (modal closes).
+
+---
+
+#### Time-sensitive test fixed
+
+`test_get_platforms_returns_distinct_sorted` seeded contests with hardcoded July 2026 dates. `get_platforms` uses a `now → now+30d` window, so the test would have silently broken after 2026-07-04. Replaced hardcoded dates with `now + timedelta(days=N)` offsets so the test never expires.
+
+---
+
 ## Next
 
 **Phase 4.1** — Classroom System: DB schema + backend (classrooms, invites, memberships, leaderboard cache tables).
