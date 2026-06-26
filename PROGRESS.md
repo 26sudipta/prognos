@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 3 — In Progress (3.1 + 3.2 done, post-review fixes applied). 3.3 (Contest UI) next.
-**Last Updated:** 2026-06-24 (Phase 3.2 review)
+## Current Status: Phase 3 — DONE (3.1 + 3.2 + 3.3 complete). Phase 4 (Classroom System) next.
+**Last Updated:** 2026-06-24 (Phase 3.3 Contest UI)
 
 ---
 
@@ -415,7 +415,37 @@ New test: `test_get_contests_pagination_stable_with_tied_start_times` — 4 cont
 
 ---
 
-### 3.3 Contest UI [TODO]
+### 3.3 Contest UI [DONE]
+**Completed:** 2026-06-24
+
+**Files created/modified:**
+- `frontend/app/_lib/contests.ts` — NEW: `ContestItem`, `ContestsListResponse`, `fetchContests`, `fetchContestPlatforms`, platform color/abbr/display helpers, time formatting utilities, `groupContestsByLocalDate`, `getLocalWeekDays`, `getWeekBoundsISO`, `getNextContest`
+- `frontend/app/(dashboard)/contests/page.tsx` — NEW: orchestrator; manages filter, view, week state; cancellable fetch effect; modal state
+- `frontend/app/(dashboard)/contests/_components/platform-badge.tsx` — NEW: colored abbreviation badge per platform
+- `frontend/app/(dashboard)/contests/_components/countdown-display.tsx` — NEW: `useCountdown` hook + `CountdownDisplay` (card) + `HeroCountdown` (hero); escalating urgency format/color
+- `frontend/app/(dashboard)/contests/_components/stale-data-banner.tsx` — NEW: amber strip when `is_stale=true`
+- `frontend/app/(dashboard)/contests/_components/contest-card.tsx` — NEW: contest row with left-border urgency states; skeleton variant
+- `frontend/app/(dashboard)/contests/_components/contest-list-view.tsx` — NEW: date-grouped list; empty state; skeleton variant
+- `frontend/app/(dashboard)/contests/_components/contest-detail-modal.tsx` — NEW: framer-motion animated modal; Escape key + backdrop dismiss
+- `frontend/app/(dashboard)/contests/_components/contest-calendar-view.tsx` — NEW: 7-column week grid; Mon–Sun in local TZ; inline "+N more" expansion; day cell skeletons
+- `frontend/app/(dashboard)/contests/_components/platform-filter-chips.tsx` — NEW: multi-select chips; "All" auto-restores when all deselected; platform color active state
+- `frontend/app/(dashboard)/contests/_components/next-contest-hero.tsx` — NEW: next/live contest strip with HeroCountdown; platform-colored CTA; skeleton variant
+- `frontend/app/_components/sidebar.tsx` — MODIFIED: Contests nav item enabled (`disabled` removed)
+- `docs/phase_3_3.md` — NEW: full phase documentation
+
+**Technical decisions:**
+- Single list endpoint for both views; calendar groups client-side by local date (avoids UTC/local mismatch from server-side grouping).
+- Countdown precision escalates: >1d → `Xd Yh`; <24h → `HH:MM:SS` cyan; <1h → `HH:MM:SS` red (pulse); live → LIVE badge + remaining time.
+- `tabular-nums` on all countdown spans prevents digit-column jitter.
+- `HeroSegment`/`HeroSep` defined at module level (not inside render) to satisfy `react-hooks/static-components`.
+- Cancellation flag in fetch effect prevents stale responses from overwriting fresh data on rapid filter changes.
+- Platform colors: `hex/22` tint background + `hex` text — works on dark backgrounds without white card.
+- TypeScript build clean; ESLint clean on all new files.
+
+**Test count:** 95 (frontend has no automated test framework; verification is TypeScript build + ESLint + manual browser check)
+
+---
+
 ## Phase 4 — Classroom System [TODO]
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]
