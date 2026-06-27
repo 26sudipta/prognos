@@ -19,7 +19,7 @@ def _make_clist_object(
 ) -> dict:
     return {
         "id": clist_id,
-        "resource": {"name": resource_name},
+        "resource": resource_name,
         "event": event,
         "start": start,
         "end": end,

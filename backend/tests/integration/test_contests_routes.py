@@ -13,6 +13,12 @@ from app.services.contests import get_contests, get_contests_calendar, get_platf
 # Test clist_ids kept in a dedicated range to avoid collisions
 _TEST_IDS = list(range(8000, 8020))
 
+# Base date far enough in the future that CLIST (30-day lookahead) will never
+# have real data here, so seeded rows are the only rows in this window.
+_BASE = datetime(2028, 7, 1, 10, 0, 0, tzinfo=UTC)
+_FROM = datetime(2028, 7, 1, tzinfo=UTC)
+_TO   = datetime(2028, 8, 1, tzinfo=UTC)
+
 
 def _make_contest_row(
     clist_id: int,
@@ -20,8 +26,7 @@ def _make_contest_row(
     name: str | None = None,
     start_offset_days: int = 1,
 ) -> Contest:
-    base = datetime(2026, 7, 1, 10, 0, 0, tzinfo=UTC)
-    start = base + timedelta(days=start_offset_days)
+    start = _BASE + timedelta(days=start_offset_days)
     return Contest(
         clist_id=clist_id,
         platform=platform,
@@ -62,10 +67,7 @@ async def seeded_contests(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_get_contests_returns_all(db_session: AsyncSession, seeded_contests):
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
-    result = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=50, offset=0)
+    result = await get_contests(db_session, platform=None, from_dt=_FROM, to_dt=_TO, limit=50, offset=0)
 
     assert result.total == 4
     assert len(result.contests) == 4
@@ -73,11 +75,8 @@ async def test_get_contests_returns_all(db_session: AsyncSession, seeded_contest
 
 @pytest.mark.asyncio
 async def test_get_contests_filters_by_platform(db_session: AsyncSession, seeded_contests):
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
     result = await get_contests(
-        db_session, platform=["codeforces.com"], from_dt=from_dt, to_dt=to_dt, limit=50, offset=0
+        db_session, platform=["codeforces.com"], from_dt=_FROM, to_dt=_TO, limit=50, offset=0
     )
 
     assert result.total == 2
@@ -86,11 +85,8 @@ async def test_get_contests_filters_by_platform(db_session: AsyncSession, seeded
 
 @pytest.mark.asyncio
 async def test_get_contests_filters_by_multiple_platforms(db_session: AsyncSession, seeded_contests):
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
     result = await get_contests(
-        db_session, platform=["codeforces.com", "atcoder.jp"], from_dt=from_dt, to_dt=to_dt, limit=50, offset=0
+        db_session, platform=["codeforces.com", "atcoder.jp"], from_dt=_FROM, to_dt=_TO, limit=50, offset=0
     )
 
     assert result.total == 4
@@ -100,11 +96,8 @@ async def test_get_contests_filters_by_multiple_platforms(db_session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_get_contests_pagination(db_session: AsyncSession, seeded_contests):
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
-    page1 = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=2, offset=0)
-    page2 = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=2, offset=2)
+    page1 = await get_contests(db_session, platform=None, from_dt=_FROM, to_dt=_TO, limit=2, offset=0)
+    page2 = await get_contests(db_session, platform=None, from_dt=_FROM, to_dt=_TO, limit=2, offset=2)
 
     assert len(page1.contests) == 2
     assert len(page2.contests) == 2
@@ -116,10 +109,7 @@ async def test_get_contests_pagination(db_session: AsyncSession, seeded_contests
 
 @pytest.mark.asyncio
 async def test_get_contests_sorted_by_start_time(db_session: AsyncSession, seeded_contests):
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
-    result = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=50, offset=0)
+    result = await get_contests(db_session, platform=None, from_dt=_FROM, to_dt=_TO, limit=50, offset=0)
 
     times = [c.start_time for c in result.contests]
     assert times == sorted(times)
@@ -129,7 +119,7 @@ async def test_get_contests_sorted_by_start_time(db_session: AsyncSession, seede
 async def test_get_contests_empty_outside_window(db_session: AsyncSession, seeded_contests):
     # Window before any test contests
     from_dt = datetime(2025, 1, 1, tzinfo=UTC)
-    to_dt = datetime(2025, 12, 31, tzinfo=UTC)
+    to_dt   = datetime(2025, 12, 31, tzinfo=UTC)
 
     result = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=50, offset=0)
 
@@ -144,25 +134,19 @@ async def test_get_contests_empty_outside_window(db_session: AsyncSession, seede
 
 @pytest.mark.asyncio
 async def test_get_contests_calendar_groups_by_date(db_session: AsyncSession, seeded_contests):
-    """2026-07-02 has 2 contests (CF+AtCoder), 2026-07-03 has 1 (CF), 2026-07-04 has 1 (AtCoder)."""
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
-    result = await get_contests_calendar(db_session, platform=None, from_dt=from_dt, to_dt=to_dt)
+    """2028-07-02 has 2 contests (CF+AtCoder), 2028-07-03 has 1 (CF), 2028-07-04 has 1 (AtCoder)."""
+    result = await get_contests_calendar(db_session, platform=None, from_dt=_FROM, to_dt=_TO)
 
     assert len(result.days) == 3
     day_map = {d.date: len(d.contests) for d in result.days}
-    assert day_map["2026-07-02"] == 2
-    assert day_map["2026-07-03"] == 1
-    assert day_map["2026-07-04"] == 1
+    assert day_map["2028-07-02"] == 2
+    assert day_map["2028-07-03"] == 1
+    assert day_map["2028-07-04"] == 1
 
 
 @pytest.mark.asyncio
 async def test_get_contests_calendar_platform_filter(db_session: AsyncSession, seeded_contests):
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
-    result = await get_contests_calendar(db_session, platform=["atcoder.jp"], from_dt=from_dt, to_dt=to_dt)
+    result = await get_contests_calendar(db_session, platform=["atcoder.jp"], from_dt=_FROM, to_dt=_TO)
 
     all_platforms = {c.platform for day in result.days for c in day.contests}
     assert all_platforms == {"atcoder.jp"}
@@ -176,7 +160,7 @@ async def test_get_contests_calendar_platform_filter(db_session: AsyncSession, s
 @pytest.mark.asyncio
 async def test_get_contests_pagination_stable_with_tied_start_times(db_session: AsyncSession):
     """Pagination must be deterministic when multiple contests share the same start_time."""
-    same_start = datetime(2026, 7, 10, 10, 0, 0, tzinfo=UTC)
+    same_start = datetime(2028, 7, 10, 10, 0, 0, tzinfo=UTC)
     rows = [
         Contest(
             clist_id=8010 + i,
@@ -194,11 +178,8 @@ async def test_get_contests_pagination_stable_with_tied_start_times(db_session: 
         db_session.add(r)
     await db_session.commit()
 
-    from_dt = datetime(2026, 7, 1, tzinfo=UTC)
-    to_dt = datetime(2026, 8, 1, tzinfo=UTC)
-
-    page1 = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=2, offset=0)
-    page2 = await get_contests(db_session, platform=None, from_dt=from_dt, to_dt=to_dt, limit=2, offset=2)
+    page1 = await get_contests(db_session, platform=None, from_dt=_FROM, to_dt=_TO, limit=2, offset=0)
+    page2 = await get_contests(db_session, platform=None, from_dt=_FROM, to_dt=_TO, limit=2, offset=2)
 
     ids_page1 = {c.clist_id for c in page1.contests}
     ids_page2 = {c.clist_id for c in page2.contests}

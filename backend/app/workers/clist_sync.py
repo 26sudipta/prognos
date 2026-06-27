@@ -120,7 +120,7 @@ def _map_contest(obj: dict, synced_at: datetime) -> dict:
 
     return {
         "clist_id": obj["id"],
-        "platform": obj["resource"]["name"],
+        "platform": obj["resource"],
         "name": obj["event"],
         "start_time": _parse_utc(obj["start"]),
         "end_time": _parse_utc(obj["end"]),

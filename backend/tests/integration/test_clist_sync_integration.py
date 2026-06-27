@@ -24,7 +24,7 @@ def _make_objects(count: int = 2) -> list[dict]:
     return [
         {
             "id": 9000 + i,
-            "resource": {"name": "codeforces.com"},
+            "resource": "codeforces.com",
             "event": f"Test Contest {i}",
             "start": (base + timedelta(days=i)).strftime("%Y-%m-%dT%H:%M:%S"),
             "end": (base + timedelta(days=i, hours=2)).strftime("%Y-%m-%dT%H:%M:%S"),
