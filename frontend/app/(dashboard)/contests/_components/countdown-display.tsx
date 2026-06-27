@@ -10,10 +10,11 @@ export interface CountdownState {
   minutes: number;
   seconds: number;
   totalSeconds: number;
-  isLive: boolean;    // started, not yet ended
-  isEnded: boolean;   // past end_time
-  isSoon: boolean;    // < 24h until start
-  isUrgent: boolean;  // < 1h until start
+  isLive: boolean;        // started, not yet ended
+  isEnded: boolean;       // past end_time
+  isSoon: boolean;        // < 24h until start
+  isUrgent: boolean;      // < 1h until start
+  isEndingSoon: boolean;  // live and < 1h remaining
 }
 
 export function useCountdown(startTime: string, endTime: string): CountdownState {
@@ -40,8 +41,9 @@ export function useCountdown(startTime: string, endTime: string): CountdownState
 
   const isSoon = !isLive && !isEnded && totalSeconds < 86400;
   const isUrgent = !isLive && !isEnded && totalSeconds < 3600;
+  const isEndingSoon = isLive && totalSeconds < 3600;
 
-  return { days, hours, minutes, seconds, totalSeconds, isLive, isEnded, isSoon, isUrgent };
+  return { days, hours, minutes, seconds, totalSeconds, isLive, isEnded, isSoon, isUrgent, isEndingSoon };
 }
 
 // ─── Display component (card-sized) ──────────────────────────────────────────

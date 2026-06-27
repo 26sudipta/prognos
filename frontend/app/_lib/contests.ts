@@ -101,6 +101,13 @@ export function platformDisplayName(platform: string): string {
 
 // ─── Time / date utilities ────────────────────────────────────────────────────
 
+// "Jun 28 · 17:35" — compact, no weekday
+export function formatLocalDateShort(isoStr: string): string {
+  const d = new Date(isoStr);
+  const datePart = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${datePart} · ${formatLocalTimeOnly(isoStr)}`;
+}
+
 // "HH:MM" in local TZ — reliable across locales
 export function formatLocalTimeOnly(isoStr: string): string {
   const d = new Date(isoStr);
@@ -175,6 +182,88 @@ export function groupContestsByLocalDate(contests: ContestItem[]): ContestGroup[
   return Array.from(groups.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, cs]) => ({ date, contests: cs }));
+}
+
+// ─── Urgency swim-lane grouping ───────────────────────────────────────────────
+
+export type UrgencyLane = "live" | "today" | "this-week" | "next-week" | "later";
+
+export interface ContestLane {
+  lane: UrgencyLane;
+  label: string;
+  contests: ContestItem[];
+}
+
+const LANE_LABELS: Record<UrgencyLane, string> = {
+  live: "Live Now",
+  today: "Today",
+  "this-week": "This Week",
+  "next-week": "Next Week",
+  later: "Later",
+};
+
+const LANE_ORDER: UrgencyLane[] = ["live", "today", "this-week", "next-week", "later"];
+
+export function groupContestsByUrgency(contests: ContestItem[]): ContestLane[] {
+  const now = new Date();
+  const nowMs = now.getTime();
+  const todayKey = localDateKey(now);
+
+  // Mon of current week (local time)
+  const dow = now.getDay(); // 0=Sun, 1=Mon … 6=Sat
+  const daysToMon = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + daysToMon);
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const nextSunday = new Date(sunday);
+  nextSunday.setDate(sunday.getDate() + 7);
+  nextSunday.setHours(23, 59, 59, 999);
+
+  const buckets: Record<UrgencyLane, ContestItem[]> = {
+    live: [],
+    today: [],
+    "this-week": [],
+    "next-week": [],
+    later: [],
+  };
+
+  for (const c of contests) {
+    const start = new Date(c.start_time).getTime();
+    const end = new Date(c.end_time).getTime();
+
+    if (nowMs >= start && nowMs < end) {
+      buckets.live.push(c);
+    } else if (start > nowMs) {
+      const startDate = new Date(c.start_time);
+      if (localDateKey(startDate) === todayKey) {
+        buckets.today.push(c);
+      } else if (startDate <= sunday) {
+        buckets["this-week"].push(c);
+      } else if (startDate <= nextSunday) {
+        buckets["next-week"].push(c);
+      } else {
+        buckets.later.push(c);
+      }
+    }
+    // ended contests are omitted from swim lanes
+  }
+
+  for (const lane of LANE_ORDER) {
+    buckets[lane].sort(
+      (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+    );
+  }
+
+  return LANE_ORDER.filter((lane) => buckets[lane].length > 0).map((lane) => ({
+    lane,
+    label: LANE_LABELS[lane],
+    contests: buckets[lane],
+  }));
 }
 
 // ─── Calendar week helpers ────────────────────────────────────────────────────

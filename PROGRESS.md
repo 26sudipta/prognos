@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 3 — DONE + UI/UX overhauled. Phase 4 (Classroom System) next.
-**Last Updated:** 2026-06-27 (Phase 3.4 — UI/UX overhaul across all pages)
+## Current Status: Phase 3 — DONE + Contest page structurally reimagined. Phase 4 (Classroom System) next.
+**Last Updated:** 2026-06-25 (Phase 3.5 — Contest page Direction B redesign)
 
 ---
 
@@ -484,6 +484,26 @@ Full audit of all Phase 3 code (backend + frontend). Four bugs found and fixed.
 - Calendar: today as dot indicator below day number
 
 **Test count:** 96 passed (no backend changes)
+
+### 3.5 Contest Page Redesign — Direction B [DONE]
+**Completed:** 2026-06-25
+
+**Files modified:**
+- `frontend/app/_lib/contests.ts` — `UrgencyLane`, `ContestLane`, `groupContestsByUrgency`, `formatLocalDateShort`
+- `frontend/app/(dashboard)/contests/_components/countdown-display.tsx` — `isEndingSoon` added to hook
+- `frontend/app/(dashboard)/contests/_components/next-contest-hero.tsx` — split-panel layout + SVG arc progress ring
+- `frontend/app/(dashboard)/contests/_components/contest-card.tsx` — status-based tint, badge pill, typographic weight
+- `frontend/app/(dashboard)/contests/_components/contest-list-view.tsx` — urgency swim lanes (LIVE/TODAY/THIS WEEK/NEXT WEEK/LATER)
+- `frontend/app/(dashboard)/contests/_components/contest-calendar-view.tsx` — 15% opacity pills, live outline, past-day dimming
+- `docs/phase_3_5.md` — phase documentation
+
+**Root-cause fixes:**
+- Status information now expressed at 4 levels simultaneously: background tint + left border + badge shape + countdown color
+- Hero has visual mass (split panel, `text-2xl` name, platform gradient tint, SVG arc ring)
+- List groups by urgency (LIVE first) not calendar date
+- Calendar pills legible on dark background (15% vs 7% opacity)
+
+**TypeScript build:** Clean (0 errors, 0 ESLint errors)
 
 ---
 

@@ -3,8 +3,8 @@
 import { Calendar } from "lucide-react";
 import {
   type ContestItem,
-  groupContestsByLocalDate,
-  formatDateHeader,
+  type UrgencyLane,
+  groupContestsByUrgency,
 } from "@/app/_lib/contests";
 import { ContestCard, ContestCardSkeleton } from "./contest-card";
 
@@ -15,17 +15,25 @@ interface Props {
   onContestClick: (c: ContestItem) => void;
 }
 
+const LANE_LABEL_COLOR: Record<UrgencyLane, string> = {
+  live: "text-success-400",
+  today: "text-accent-400",
+  "this-week": "text-text-muted",
+  "next-week": "text-text-muted",
+  later: "text-text-muted",
+};
+
 export function ContestListView({
   contests,
   selectedPlatforms,
   onClearFilter,
   onContestClick,
 }: Props) {
-  if (contests === undefined) {
-    return <ContestListSkeleton />;
-  }
+  if (contests === undefined) return <ContestListSkeleton />;
 
-  if (contests.length === 0) {
+  const lanes = groupContestsByUrgency(contests);
+
+  if (lanes.length === 0) {
     return (
       <EmptyState
         selectedPlatforms={selectedPlatforms}
@@ -34,18 +42,29 @@ export function ContestListView({
     );
   }
 
-  const groups = groupContestsByLocalDate(contests);
-
   return (
-    <div className="space-y-6">
-      {groups.map(({ date, contests: groupContests }) => (
-        <div key={date}>
-          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-widest mb-3 flex items-center gap-3">
-            {formatDateHeader(date)}
+    <div>
+      {lanes.map(({ lane, label, contests: laneContests }, i) => (
+        <div key={lane} className={i > 0 ? "mt-8" : ""}>
+          {/* Swim-lane header */}
+          <div className="flex items-center gap-3 mb-3">
+            {lane === "live" && (
+              <span className="w-1.5 h-1.5 rounded-full bg-success-400 animate-pulse shrink-0" />
+            )}
+            <h3
+              className={`text-[11px] font-semibold uppercase tracking-widest ${LANE_LABEL_COLOR[lane]}`}
+            >
+              {label}
+            </h3>
             <span className="flex-1 h-px bg-border-subtle" />
-          </h3>
+            <span className="text-[10px] text-text-disabled tabular-nums">
+              {laneContests.length}
+            </span>
+          </div>
+
+          {/* Cards */}
           <div className="space-y-2">
-            {groupContests.map((c) => (
+            {laneContests.map((c) => (
               <ContestCard
                 key={c.id}
                 contest={c}
@@ -97,11 +116,11 @@ function EmptyState({
 
 export function ContestListSkeleton() {
   return (
-    <div className="space-y-6">
+    <div>
       {[0, 1, 2].map((g) => (
-        <div key={g}>
+        <div key={g} className={g > 0 ? "mt-8" : ""}>
           <div className="flex items-center gap-3 mb-3">
-            <div className="skeleton h-3 w-36 rounded" />
+            <div className="skeleton h-2.5 w-20 rounded" />
             <div className="flex-1 h-px bg-border-subtle" />
           </div>
           <div className="space-y-2">

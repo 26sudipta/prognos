@@ -93,7 +93,11 @@ export function ContestCalendarView({
               </p>
               <p
                 className={`text-sm font-semibold mt-0.5 ${
-                  isToday ? "text-primary-400" : "text-text-secondary"
+                  isToday
+                    ? "text-primary-400"
+                    : day < new Date(new Date().setHours(0, 0, 0, 0))
+                    ? "text-text-disabled"
+                    : "text-text-secondary"
                 }`}
               >
                 {day.getDate()}
@@ -205,9 +209,10 @@ function CalendarPill({
       onClick={onClick}
       className="w-full text-left px-1.5 py-1 rounded text-[11px] font-medium leading-tight truncate hover:opacity-90 transition-opacity"
       style={{
-        backgroundColor: `${color}22`,
+        backgroundColor: `${color}26`,  // 15% opacity — legible on dark bg
         color,
-        borderLeft: `2px solid ${color}`,
+        borderLeft: `3px solid ${color}`,
+        ...(isLive ? { outline: `1px solid ${color}55` } : {}),
       }}
       title={contest.name}
     >
