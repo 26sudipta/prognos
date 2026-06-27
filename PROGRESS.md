@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 3 — DONE + QA audited. Phase 4 (Classroom System) next.
-**Last Updated:** 2026-06-25 (Phase 3 QA audit — 4 bugs fixed)
+## Current Status: Phase 3 — DONE + UI/UX overhauled. Phase 4 (Classroom System) next.
+**Last Updated:** 2026-06-27 (Phase 3.4 — UI/UX overhaul across all pages)
 
 ---
 
@@ -464,6 +464,26 @@ Full audit of all Phase 3 code (backend + frontend). Four bugs found and fixed.
 - All existing tests updated: single-platform calls changed from `platform="x"` → `platform=["x"]` to match new `list[str]` signature
 
 **Test count:** 96 passed (was 95)
+
+### 3.4 UI/UX Overhaul [DONE]
+**Completed:** 2026-06-27
+
+**Files modified:** `globals.css`, `sidebar.tsx`, `stat-strip.tsx`, `activity-heatmap.tsx`, `rating-chart.tsx`, `tag-stats.tsx`, `next-contest-hero.tsx`, `contest-card.tsx`, `platform-filter-chips.tsx`, `stale-data-banner.tsx`, `contest-calendar-view.tsx`
+
+**What changed:**
+- Design tokens: desaturated navy → neutral-dark (`#09090C` base); borders switched to `rgba(255,255,255,0.06/0.10)` semi-transparent overlay
+- Sidebar: section labels ("Analytics" / "Tools"); neutral white active state; darker sidebar bg (`#0D0D12`)
+- Stat cards: tight `tracking-[-0.02em] tabular-nums` on values; sparkline SVG on Total Solved card; amber left-border when streak is active
+- Heatmap: vibrant indigo palette (5-level); hover scale+ring; today cell ring; staggered column entrance animation; glassmorphism tooltip
+- Rating chart: switched `LineChart` → `AreaChart` with indigo gradient fill; mean rating reference line; grid at `rgba(255,255,255,0.05)`
+- Tag stats: gradient bar fills; neutral `rgba(255,255,255,0.04)` track
+- Contest hero: live green gradient tint; "Open Contest" CTA when live
+- Contest cards: `border-l-2`; ended link fades until hover
+- Filter chips: `ring-inset` box-shadow active state
+- Stale banner: slimmer, pulsing dot
+- Calendar: today as dot indicator below day number
+
+**Test count:** 96 passed (no backend changes)
 
 ---
 
