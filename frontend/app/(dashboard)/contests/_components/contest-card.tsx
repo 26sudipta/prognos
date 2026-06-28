@@ -32,13 +32,6 @@ export function ContestCard({ contest, onClick }: Props) {
     ? "rgba(34,211,238,0.04)"
     : undefined;
 
-  // Left border per status
-  const borderL = isLive
-    ? "border-l-success-400"
-    : isSoon
-    ? "border-l-accent-400"
-    : "border-l-border-subtle";
-
   // Name typography based on urgency priority
   const nameClass = isEnded
     ? "text-text-disabled font-normal"
@@ -54,7 +47,7 @@ export function ContestCard({ contest, onClick }: Props) {
 
   return (
     <div
-      className={`flex items-center gap-4 border border-border-subtle border-l-[3px] ${borderL}
+      className={`flex items-center gap-4 border border-border-subtle
         rounded-xl px-4 py-3.5 hover:border-border-default transition-colors duration-150
         ${isEnded ? "opacity-40" : ""} ${onClick ? "cursor-pointer" : ""}`}
       style={cardBg ? { backgroundColor: cardBg } : undefined}
@@ -111,7 +104,7 @@ export function ContestCard({ contest, onClick }: Props) {
 
 export function ContestCardSkeleton() {
   return (
-    <div className="flex items-center gap-4 border border-border-subtle border-l-[3px] border-l-border-subtle rounded-xl px-4 py-3.5">
+    <div className="flex items-center gap-4 border border-border-subtle rounded-xl px-4 py-3.5">
       <div className="skeleton w-8 h-8 rounded-lg shrink-0" />
       <div className="flex-1 space-y-2">
         <div className="skeleton h-3.5 w-3/5 rounded" />
