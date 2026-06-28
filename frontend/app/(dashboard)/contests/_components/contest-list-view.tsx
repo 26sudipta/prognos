@@ -47,7 +47,7 @@ export function ContestListView({
       {lanes.map(({ lane, label, contests: laneContests }, i) => (
         <div key={lane} className={i > 0 ? "mt-8" : ""}>
           {/* Swim-lane header */}
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-2 mb-3">
             {lane === "live" && (
               <span className="w-1.5 h-1.5 rounded-full bg-success-400 animate-pulse shrink-0" />
             )}
@@ -56,9 +56,8 @@ export function ContestListView({
             >
               {label}
             </h3>
-            <span className="flex-1 h-px bg-border-subtle" />
-            <span className="text-[10px] text-text-disabled tabular-nums">
-              {laneContests.length}
+            <span className="text-[10px] text-text-disabled tabular-nums ml-1">
+              ({laneContests.length})
             </span>
           </div>
 

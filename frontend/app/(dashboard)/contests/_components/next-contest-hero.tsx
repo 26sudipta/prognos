@@ -81,9 +81,6 @@ function HeroStrip({ contest }: { contest: ContestItem }) {
         background: `linear-gradient(135deg, ${heroTint} 0%, transparent 60%), var(--bg-surface)`,
       }}
     >
-      {/* Platform-colored top bar */}
-      <div className="h-[2px]" style={{ backgroundColor: color }} />
-
       {/* Body: arc panel + divider + info panel */}
       <div className="flex items-stretch">
         {/* Arc countdown panel */}
@@ -286,7 +283,6 @@ function ArcCountdownPanel({
 export function NextContestHeroSkeleton() {
   return (
     <div className="bg-bg-surface border border-border-default rounded-2xl overflow-hidden">
-      <div className="h-[2px] skeleton" />
       <div className="flex items-stretch">
         <div className="w-64 shrink-0 flex items-center justify-center py-8 px-6">
           <div className="relative w-[160px] h-[160px]">
