@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import httpx
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.core.security import (
     hash_token,
     refresh_token_expires_at,
 )
+from app.models.classroom import Classroom
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -180,11 +181,19 @@ async def update_user_name(db: AsyncSession, user_id: str, name: str) -> User:
 
 
 async def soft_delete_user(db: AsyncSession, user_id: str) -> None:
-    """Soft-delete account: anonymize PII, revoke all sessions.
+    """Soft-delete account: anonymize PII, revoke all sessions."""
+    active_classrooms = await db.scalar(
+        select(func.count()).where(
+            Classroom.owner_id == user_id,
+            Classroom.is_active.is_(True),
+        )
+    )
+    if active_classrooms:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Delete your classrooms before deleting your account.",
+        )
 
-    Teacher ownership check (classrooms) is enforced at the route layer
-    once Phase 4 (classrooms) is built — no-op here until then.
-    """
     hashed = hashlib.sha256(user_id.encode()).hexdigest()
     await db.execute(
         update(User)

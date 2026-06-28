@@ -26,6 +26,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.models.analytics import DailyActivity, RatingHistory, Submission, SubmissionTag, TagStats
+from app.models.classroom import ClassroomMembership
 from app.models.signals import Recommendation, RecommendationSet, WeaknessSignal, WeaknessSignalType
 from app.models.user_handle import HandleSyncStatus, UserHandle
 
@@ -112,6 +113,10 @@ async def _sync_handle_async(handle_id: uuid.UUID) -> dict:
             handle.last_synced_at = datetime.now(UTC)
             handle.last_sync_error = None
             await session.commit()
+
+            # Step 6: trigger leaderboard rebuild for every classroom this user belongs to
+            await _trigger_leaderboard_rebuilds(handle.user_id, session)
+
             return {"synced": submissions}
 
         except Exception as exc:
@@ -492,5 +497,18 @@ async def _get_cf_problemset() -> list[dict]:
             await r.aclose()
     except Exception:
         pass
+
+
+async def _trigger_leaderboard_rebuilds(user_id: uuid.UUID, session: AsyncSession) -> None:
+    """Enqueue leaderboard rebuilds for all classrooms the user belongs to."""
+    from app.workers.classroom_sync import rebuild_classroom_leaderboard
+
+    result = await session.execute(
+        select(ClassroomMembership.classroom_id).where(
+            ClassroomMembership.user_id == user_id
+        )
+    )
+    for cid in result.scalars().all():
+        rebuild_classroom_leaderboard.delay(str(cid))
 
     return problems

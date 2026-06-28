@@ -7,7 +7,7 @@ celery_app = Celery(
     "prognos",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.workers.cf_sync", "app.workers.clist_sync"],
+    include=["app.workers.cf_sync", "app.workers.clist_sync", "app.workers.classroom_sync"],
 )
 
 celery_app.conf.update(
@@ -30,5 +30,10 @@ celery_app.conf.beat_schedule = {
     "clist-sync-contests": {
         "task": "app.workers.clist_sync.sync_clist_contests",
         "schedule": crontab(minute=0, hour="*/4"),
+    },
+    # Rebuild classroom leaderboard cache every hour
+    "rebuild-all-leaderboards": {
+        "task": "app.workers.classroom_sync.rebuild_all_classroom_leaderboards",
+        "schedule": crontab(minute=0),
     },
 }
