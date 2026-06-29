@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 5.1 (Insights Page) — DONE. Phase 5 (Mobile) or Phase 6 (AI Layer) next.
-**Last Updated:** 2026-06-29 (Insights page — analytics split from dashboard, 0 build errors)
+## Current Status: Deployment D0 (worker-free free-tier backend) — DONE. D1+ = provision Neon/Render/Vercel.
+**Last Updated:** 2026-06-29 (Go-live D0 — Celery/Redis-optional backend, cron endpoints, 127 tests pass)
 
 ---
 
@@ -634,6 +634,44 @@ Also added missing test: `test_join_classroom_expired_invite_raises_410`.
 - Polling loop duplicated on Insights page — users may be on this page when sync runs (just linked handle)
 
 **Build:** `npm run build` — 0 TypeScript errors, 0 ESLint errors, `/insights` is `○ (Static)`
+
+## Deployment — Go-Live (100% Free, Push-to-Deploy)
+
+Plan: `docs/deployment_golive_plan.md`. Architecture: Vercel (frontend) → `/api/*` rewrite
+proxy → Render (FastAPI, free) → Neon (Postgres, free); cron-job.org for keep-warm + sync.
+No Redis / no Celery worker.
+
+### D0 — Backend worker-free changes + deploy config [DONE]
+**Completed:** 2026-06-29
+
+**Files created/modified:**
+- `backend/app/core/config.py` — `CRON_SECRET` setting (empty default → cron endpoints reject all)
+- `backend/app/core/database.py` — asyncpg `connect_args={"ssl": True}` in production (Neon TLS)
+- `backend/app/workers/cf_sync.py` — `_get_cf_problemset` now has a **process-local TTL cache**
+  (Redis substitute; avoids re-fetching the ~10MB CF problemset → OOM risk on 512MB). Fixed two
+  latent bugs: missing `return problems` (returned `None` on cache-miss) and a stray
+  `return problems` inside `_trigger_leaderboard_rebuilds` (NameError); made the Celery
+  `.delay()` leaderboard enqueue best-effort so a missing broker can't fail handle sync.
+- `backend/app/api/v1/routes/cron.py` — NEW: `POST /cron/sync-contests`, `POST /cron/sync-handles`,
+  guarded by `X-Cron-Secret` (constant-time compare); run work via FastAPI BackgroundTasks
+- `backend/app/api/v1/__init__.py` — cron router wired
+- `backend/app/api/v1/routes/auth.py` — refresh cookie `samesite` `strict` → `lax` (first-party
+  via the Vercel proxy; strict would drop the cookie on the OAuth cross-site redirect)
+- `backend/Dockerfile` — CMD honors Render's `$PORT` (shell form, default 8000)
+- `render.yaml` — NEW: free web service from `backend/Dockerfile`, health check, `preDeployCommand:
+  alembic upgrade head`, secret env vars (`sync: false`)
+- `frontend/vercel.json` — NEW: rewrite `/api/:path*` → Render backend (makes API same-origin)
+
+**Technical decisions:**
+- Worker-free by design: background sync moves from Celery beat to cron-triggered BackgroundTasks;
+  `REDIS_URL` unset degrades gracefully (problemset cache + sync fallback already in place, Phase 2.6)
+- BackgroundTasks run sequentially after the response → handle syncs are naturally CF-rate-friendly
+- Vercel rewrite proxy keeps the refresh cookie first-party (avoids Safari/Chrome third-party-cookie
+  block that would silently break session-restore-on-reload)
+
+**Verification:** 127 backend tests pass; app boots with `REDIS_URL=""`; cron endpoints return 401
+without the secret. **Next (D1+):** provision Neon, deploy to Render/Vercel, wire Google OAuth +
+cron-job.org (user actions; see plan doc).
 
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]

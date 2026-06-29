@@ -1,0 +1,41 @@
+# Render Blueprint — free-tier backend for PROGNOS.
+# The frontend is on Vercel; Postgres is on Neon (set DATABASE_URL below).
+# No Redis / Celery worker on the free tier: background sync runs via the
+# /api/v1/cron/* endpoints triggered by cron-job.org (see docs/deployment_golive_plan.md).
+services:
+  - type: web
+    name: prognos-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health
+    # Apply migrations before each deploy goes live.
+    preDeployCommand: alembic upgrade head
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # Secrets — set these in the Render dashboard (sync: false keeps them
+      # out of the repo). Neon: use the DIRECT connection string (asyncpg).
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: CLIST_USERNAME
+        sync: false
+      - key: CLIST_API_KEY
+        sync: false

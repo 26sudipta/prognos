@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     ENVIRONMENT: str = "development"
 
+    # Cron — shared secret for the external scheduler (cron-job.org) that
+    # triggers background sync in the worker-free (free-tier) deployment.
+    # Empty by default → cron endpoints reject all callers.
+    CRON_SECRET: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"

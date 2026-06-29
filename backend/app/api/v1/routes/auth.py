@@ -30,7 +30,11 @@ def _set_refresh_cookie(response: Response, raw_refresh: str) -> None:
         value=raw_refresh,
         httponly=True,
         secure=settings.is_production,
-        samesite="strict",
+        # "lax" (not "strict"): in production the SPA reaches the API through the
+        # Vercel rewrite proxy, so the cookie is first-party same-origin and lax
+        # suffices. strict would drop the cookie on the OAuth callback's
+        # cross-site top-level redirect back from Google.
+        samesite="lax",
         max_age=COOKIE_MAX_AGE,
         path="/api/v1/auth",
     )

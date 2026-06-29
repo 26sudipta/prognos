@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import random
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -470,8 +471,15 @@ def _pick_problem(
     return random.choice(candidates) if candidates else None
 
 
+# Process-local fallback cache for the CF problemset (~10MB JSON). Replaces
+# Redis in the worker-free / free-tier deployment so recommendation generation
+# does not refetch + parse the whole problemset on every call (OOM risk on a
+# 512MB instance). Single web process → a module-level cache is correct here.
+_problemset_mem: dict = {"data": None, "fetched_at": 0.0}
+
+
 async def _get_cf_problemset() -> list[dict]:
-    # Try Redis cache (best-effort — degrades gracefully if Redis is unavailable)
+    # 1. Redis cache (used only when Redis is configured/available)
     try:
         import redis.asyncio as aioredis
         r = aioredis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2)
@@ -484,9 +492,20 @@ async def _get_cf_problemset() -> list[dict]:
     except Exception:
         pass
 
+    # 2. Process-local cache (Redis substitute on the free tier)
+    if (
+        _problemset_mem["data"] is not None
+        and time.monotonic() - _problemset_mem["fetched_at"] < CF_PROBLEMSET_TTL
+    ):
+        return _problemset_mem["data"]
+
+    # 3. Fetch fresh from CF, then populate both caches
     async with httpx.AsyncClient() as client:
         data = await _cf_get(client, "problemset.problems")
     problems = data["result"]["problems"]
+
+    _problemset_mem["data"] = problems
+    _problemset_mem["fetched_at"] = time.monotonic()
 
     try:
         import redis.asyncio as aioredis
@@ -497,6 +516,8 @@ async def _get_cf_problemset() -> list[dict]:
             await r.aclose()
     except Exception:
         pass
+
+    return problems
 
 
 async def _trigger_leaderboard_rebuilds(user_id: uuid.UUID, session: AsyncSession) -> None:
@@ -509,6 +530,9 @@ async def _trigger_leaderboard_rebuilds(user_id: uuid.UUID, session: AsyncSessio
         )
     )
     for cid in result.scalars().all():
-        rebuild_classroom_leaderboard.delay(str(cid))
-
-    return problems
+        # Best-effort: on the worker-free (free-tier) deployment there is no
+        # broker, so .delay() will fail — that must not fail the handle sync.
+        try:
+            rebuild_classroom_leaderboard.delay(str(cid))
+        except Exception:
+            logger.warning("leaderboard rebuild enqueue skipped (no broker) for %s", cid)
