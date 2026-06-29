@@ -9,7 +9,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     plan: free
-    region: oregon
+    region: singapore
     healthCheckPath: /api/v1/health
     # Apply migrations before each deploy goes live.
     preDeployCommand: alembic upgrade head
