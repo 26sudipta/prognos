@@ -19,13 +19,17 @@ WORKDIR /app
 # Copy the installed venv from builder
 COPY --from=builder /app/.venv /app/.venv
 
-# Copy application code
+# Copy application code + migration files (alembic runs at startup)
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
 # Use venv python
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
-# Shell form so $PORT (injected by Render) expands; falls back to 8000 locally.
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Apply DB migrations, then start the server. Shell form so $PORT (injected by
+# Render) expands; falls back to 8000 locally. `alembic upgrade head` is a no-op
+# when the DB is already current.
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
