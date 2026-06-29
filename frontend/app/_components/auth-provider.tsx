@@ -66,10 +66,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function restore() {
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/auth/refresh`,
-          { method: "POST", credentials: "include" },
-        );
+        const apiBase =
+          process.env.NEXT_PUBLIC_API_URL ??
+          (process.env.NODE_ENV === "production" ? "" : "http://localhost:8000");
+        const res = await fetch(`${apiBase}/api/v1/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+        });
         if (res.ok) {
           const data = await res.json();
           await fetchUser(data.access_token);

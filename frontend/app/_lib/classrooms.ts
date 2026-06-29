@@ -200,7 +200,9 @@ export async function joinClassroom(token: string, inviteToken: string): Promise
 }
 
 export async function fetchJoinPreview(inviteToken: string): Promise<JoinPreviewResponse> {
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  const API_BASE =
+    process.env.NEXT_PUBLIC_API_URL ??
+    (process.env.NODE_ENV === "production" ? "" : "http://localhost:8000");
   const res = await fetch(`${API_BASE}/api/v1/classrooms/join-preview/${inviteToken}`, {
     credentials: "include",
   });

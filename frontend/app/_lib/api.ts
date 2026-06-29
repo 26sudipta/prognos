@@ -1,6 +1,10 @@
 "use client";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// In production the SPA reaches the API via the Vercel /api proxy (same-origin),
+// so the base is "" (relative). Locally it falls back to the dev backend.
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:8000");
 
 type RequestOptions = RequestInit & { token?: string | null };
 
