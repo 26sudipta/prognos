@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 3 — DONE + Contest page structurally reimagined. Phase 4 (Classroom System) next.
-**Last Updated:** 2026-06-25 (Phase 3.5 — Contest page Direction B redesign)
+## Current Status: Phase 4 — DONE. All 4 slices complete (DB, backend, Celery worker, frontend). Phase 5 next.
+**Last Updated:** 2026-06-29 (Phase 4.4 — Frontend classroom pages complete; build clean)
 
 ---
 
@@ -507,6 +507,81 @@ Full audit of all Phase 3 code (backend + frontend). Four bugs found and fixed.
 
 ---
 
-## Phase 4 — Classroom System [TODO]
+## Phase 4 — Classroom System [DONE]
+
+### 4.1 Database Migration [DONE]
+**Completed:** 2026-06-29
+
+**Files created/modified:**
+- `backend/alembic/versions/006_add_classroom_tables.py` — 4 tables + `classroom_membership_role` PG enum; CASCADE + SET NULL FKs
+- `backend/app/models/classroom.py` — SQLAlchemy 2.0 models: `Classroom`, `ClassroomInvite`, `ClassroomMembership`, `ClassroomLeaderboard`
+- `backend/app/models/__init__.py` — exports 4 new models
+
+**Technical decisions:**
+- JSONB for `top_tags` / `weak_tags` on leaderboard — cache rebuilt hourly; UPSERT single row per user vs. child-table churn
+- `classroom_memberships.invite_id` ON DELETE SET NULL — preserve membership audit trail when invite is removed
+- `classroom_leaderboard.user_id` ON DELETE CASCADE — cache row is a projection; vanishes when user is deleted
+- `values_callable=lambda x: [e.value for e in x]` on enum — required to match DB values to Python strings
+
+### 4.2 Backend CRUD [DONE]
+**Completed:** 2026-06-29
+
+**Files created/modified:**
+- `backend/app/schemas/classroom.py` — all Pydantic schemas (request + response)
+- `backend/app/services/classroom.py` — 12 service functions (create, join, leave, delete, invites, members, leaderboard, cohort)
+- `backend/app/api/v1/routes/classrooms.py` — 14 REST endpoints
+- `backend/app/api/v1/__init__.py` — classrooms_router registered
+- `backend/app/services/auth.py` — account-deletion guard (409 if user owns active classrooms)
+- `backend/tests/integration/test_classroom_routes.py` — 30 integration tests
+
+**Technical decisions:**
+- Route ordering: `/classrooms/join` and `/classrooms/join-preview/{token}` registered before `/{classroom_id}` (prevents FastAPI treating "join" as UUID)
+- `join-preview` endpoint is public (no `get_current_user` dep) — needed by unauthenticated join landing page
+- Join flow uses 410 Gone (not 403) for expired/revoked invites
+- `my_role` derived per-requesting-user in `ClassroomResponse` — self-contained, no second query from client
+
+**Test count:** 126 passed
+
+### 4.3 Leaderboard Worker + Cohort Analytics [DONE]
+**Completed:** 2026-06-29
+
+**Files created/modified:**
+- `backend/app/workers/classroom_sync.py` — `rebuild_classroom_leaderboard` (Celery task) + `rebuild_all_classroom_leaderboards` (beat)
+- `backend/app/workers/celery_app.py` — classroom_sync included; beat entry every hour
+- `backend/app/workers/cf_sync.py` — Step 6: trigger per-classroom leaderboard rebuild after CF sync
+- `backend/app/services/classroom.py` — `get_cohort_analytics()` reads JSONB, aggregates via Python Counter
+
+**Technical decisions:**
+- `asyncio.run()` per Celery task — isolated event loop; no shared state between tasks
+- Partial failure: `_build_leaderboard_row()` returns None on missing handle → old row preserved, rebuild continues
+- Stale member pruning: `DELETE WHERE user_id NOT IN ($current_member_ids)` after rebuild
+- `from app.workers.classroom_sync import ...` inside helper function — breaks circular import
+- Cohort analytics reads only `classroom_leaderboard` table; JSONB aggregated in Python (simpler than SQL `jsonb_array_elements`)
+
+### 4.4 Frontend [DONE]
+**Completed:** 2026-06-29
+
+**Files created/modified:**
+- `frontend/app/_lib/classrooms.ts` — 14 API functions + types + utilities
+- `frontend/app/(dashboard)/classrooms/page.tsx` — classroom list + empty state
+- `frontend/app/(dashboard)/classrooms/create/page.tsx` — single-field create form
+- `frontend/app/(dashboard)/classrooms/[id]/page.tsx` — orchestrator: tabs, parallel fetches, delete/leave
+- `frontend/app/(dashboard)/classrooms/[id]/_components/leaderboard-table.tsx` — 7-column table + shimmer
+- `frontend/app/(dashboard)/classrooms/[id]/_components/invite-panel.tsx` — teacher invite management
+- `frontend/app/(dashboard)/classrooms/[id]/_components/cohort-analytics.tsx` — attendance bars + tag lists
+- `frontend/app/(dashboard)/classrooms/[id]/_components/member-management.tsx` — inline remove confirm
+- `frontend/app/join/[token]/page.tsx` — 7-state discriminated union; public landing
+- `frontend/app/_components/sidebar.tsx` — Classroom nav enabled; disabled branch removed
+- `frontend/app/(auth)/callback/page.tsx` — `pending_join` localStorage redirect after OAuth
+
+**Technical decisions:**
+- `undefined | null | T` sentinel for all async data — eliminates boolean `isLoading` pairs
+- Teacher-only data (cohort, invites) fetched in dedicated `useEffect` gated on `isTeacher` — no wasted requests for students
+- `pending_join` uses localStorage (not auth storage) — invite token is not a secret; survives OAuth redirect loop
+- `fetchJoinPreview` uses raw `fetch` (not `apiFetch`) — public endpoint; no auth header injection
+- Inline two-step confirm (not modal) for destructive actions — sufficient for simple yes/no without additional input
+
+**Build:** `npm run build` — 0 TypeScript errors, 0 ESLint errors, 11 routes
+
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]
