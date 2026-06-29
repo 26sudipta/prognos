@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/contests",  label: "Contests",  icon: Calendar },
   { href: "/handles",   label: "Handles",   icon: Link2 },
-  { href: "/classroom", label: "Classroom", icon: GraduationCap,  disabled: true },
+  { href: "/classrooms", label: "Classrooms", icon: GraduationCap },
 ];
 
 export function Sidebar() {
@@ -43,20 +43,8 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.map(({ href, label, icon: Icon, disabled }) => {
-          const active = pathname === href;
-          if (disabled) {
-            return (
-              <span
-                key={href}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-disabled cursor-not-allowed select-none"
-                title="Coming soon"
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                {label}
-              </span>
-            );
-          }
+        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
               key={href}

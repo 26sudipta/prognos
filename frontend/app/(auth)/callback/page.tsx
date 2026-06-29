@@ -15,7 +15,13 @@ function CallbackHandler() {
     if (token) {
       login(token);
       window.history.replaceState({}, "", "/auth/callback");
-      router.replace("/dashboard");
+      const pendingJoin = localStorage.getItem("pending_join");
+      if (pendingJoin) {
+        localStorage.removeItem("pending_join");
+        router.replace(`/join/${pendingJoin}`);
+      } else {
+        router.replace("/dashboard");
+      }
     } else {
       router.replace("/login");
     }
