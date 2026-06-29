@@ -30,7 +30,7 @@ interface Props {
 export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
   if (data === null) {
     return (
-      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col items-center justify-center text-center gap-4 min-h-[200px]">
+      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col items-center justify-center text-center gap-4 min-h-[300px]">
         <div className="flex items-center justify-center w-12 h-12 rounded-full bg-bg-surface-raised border border-border-default">
           <RefreshCw className="w-5 h-5 text-text-muted" />
         </div>

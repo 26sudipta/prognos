@@ -43,7 +43,7 @@ export function TagStats({ data }: Props) {
       <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest mb-4">
         Top Tags
       </h2>
-      <div className="space-y-3.5 overflow-y-auto max-h-[320px] pr-3">
+      <div className="space-y-3.5 overflow-y-auto max-h-[360px] pr-1">
         {top.map((t) => {
           const accColor = acceptanceColor(t.acceptance_rate);
           return (

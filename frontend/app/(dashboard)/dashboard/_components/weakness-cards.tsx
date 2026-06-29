@@ -37,7 +37,7 @@ interface Props {
 export function WeaknessCards({ data, recTags = [] }: Props) {
   if (data.length === 0) {
     return (
-      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex items-center justify-center min-h-[200px]">
+      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex items-center justify-center min-h-[300px]">
         <p className="text-sm text-text-muted">No focus areas detected yet.</p>
       </div>
     );

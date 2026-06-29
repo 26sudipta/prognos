@@ -119,9 +119,9 @@ export function ActivityHeatmap({ data }: Props) {
   }
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-4">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
       {/* Header: title left, legend + stat right — no bottom gap */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
           Submission Activity
         </h2>
@@ -217,8 +217,8 @@ export function ActivityHeatmap({ data }: Props) {
 
 export function HeatmapSkeleton() {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-4">
-      <div className="flex justify-between mb-3">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
+      <div className="flex justify-between mb-4">
         <div className="skeleton h-3 w-32" />
         <div className="skeleton h-3 w-40" />
       </div>
