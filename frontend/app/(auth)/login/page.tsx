@@ -1,4 +1,5 @@
-import { TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { TrendingUp, ArrowLeft } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -21,6 +22,14 @@ export default function LoginPage() {
       </div>
 
       <div className="relative w-full max-w-sm">
+        {/* Back to home */}
+        <Link
+          href="/"
+          className="absolute -top-10 left-0 flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back to home
+        </Link>
         {/* Logo */}
         <div className="flex flex-col items-center gap-3 mb-10">
           <div className="w-12 h-12 rounded-xl bg-primary-500 flex items-center justify-center">

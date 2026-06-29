@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 4 — DONE + QA audit complete. 5 bugs fixed. Phase 5 next.
-**Last Updated:** 2026-06-30 (Phase 4 QA Audit — 5 bugs fixed, 127 tests passing)
+## Current Status: Phase 5.0 (Landing Page) — DONE. Phase 5 (Mobile) next.
+**Last Updated:** 2026-07-01 (Landing Page — CF handle widget, 11-section marketing page, build clean)
 
 ---
 
@@ -599,6 +599,25 @@ Full code review + subagent audit of all Phase 4 classroom code. 5 real bugs fou
 Also added missing test: `test_join_classroom_expired_invite_raises_410`.
 
 **Test count:** 127 passed (was 126)
+
+## Phase 5.0 — Marketing Landing Page [DONE]
+**Completed:** 2026-07-01
+
+**Files created/modified:**
+- `frontend/app/page.tsx` — REWRITTEN: full 11-section landing page (was `redirect("/dashboard")`)
+- `frontend/app/_components/landing-navbar.tsx` — NEW: sticky navbar, scroll-triggered backdrop-blur, auth-aware CTA (Log In + Sign Up vs. Dashboard)
+- `frontend/app/_components/handle-preview-widget.tsx` — NEW: live CF API handle lookup, 4-state UX (empty/loading/success/error), rating-color-coded profile card
+- `frontend/app/(auth)/login/page.tsx` — UPDATED: "← Back to home" link added
+
+**Technical decisions:**
+- CF API called directly from browser (CORS verified: `access-control-allow-origin: *`); no backend proxy needed
+- `PHONE_HEATMAP` fixed constant array (35 values) replaces `Math.random()` to prevent SSR/client hydration mismatch
+- All JSX text uses HTML entities (`&apos;`, `&ldquo;`, etc.) + no contractions to satisfy `react/no-unescaped-entities`
+- `eslint-disable-next-line @next/next/no-img-element` scoped to CF avatar `<img>` — subdomain varies per user, cannot be pre-registered in next.config.ts
+- Mobile section placed before AI section — mobile app is a primary shippable product
+- Social proof section uses placeholder stats and testimonials — must be replaced with real data before external launch (see docs/phase_5_0.md)
+
+**Build:** `npm run build` — 0 TypeScript errors, 0 ESLint errors, `/` is `○ (Static)` prerendered
 
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]
