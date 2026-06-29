@@ -53,7 +53,7 @@ export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
   const { recommendations, generated_at } = data;
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
           Recommended Problems
@@ -76,7 +76,7 @@ export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
         </div>
       </div>
 
-      <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+      <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
         {recommendations.map((rec) => {
           const dc = difficultyColor(rec.difficulty);
           const badge = positionBadgeStyle(rec.position);

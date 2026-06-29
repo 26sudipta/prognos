@@ -51,7 +51,7 @@ export function WeaknessCards({ data, recTags = [] }: Props) {
   });
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col">
       <div className="flex items-baseline justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
           Focus Areas
@@ -59,7 +59,7 @@ export function WeaknessCards({ data, recTags = [] }: Props) {
         <span className="text-[10px] text-text-disabled">analyzed {analyzedLabel}</span>
       </div>
 
-      <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
+      <div className="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
         {data.map((s) => {
           const cfg = SIGNAL_CFG[s.signal_type];
           const recCount = recTags.filter((t) => t === s.tag).length;

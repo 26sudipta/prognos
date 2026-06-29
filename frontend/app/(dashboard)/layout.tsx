@@ -32,7 +32,7 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-bg-base">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      <main className="flex-1 overflow-y-auto p-6 h-full">{children}</main>
     </div>
   );
 }
