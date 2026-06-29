@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Deployment D0 (worker-free free-tier backend) — DONE. D1+ = provision Neon/Render/Vercel.
-**Last Updated:** 2026-06-29 (Go-live D0 — Celery/Redis-optional backend, cron endpoints, 127 tests pass)
+## Current Status: LIVE — web app deployed free (Vercel + Render + Neon). Remaining: cron-job.org keep-warm/sync.
+**Last Updated:** 2026-06-30 (Go-live D0–D6 — frontend + backend + DB live, Google login working)
 
 ---
 
@@ -670,8 +670,21 @@ No Redis / no Celery worker.
   block that would silently break session-restore-on-reload)
 
 **Verification:** 127 backend tests pass; app boots with `REDIS_URL=""`; cron endpoints return 401
-without the secret. **Next (D1+):** provision Neon, deploy to Render/Vercel, wire Google OAuth +
-cron-job.org (user actions; see plan doc).
+without the secret.
+
+### D1–D6 — Live deployment [DONE]
+**Completed:** 2026-06-30. Full execution log + gotchas: `docs/deployment_execution.md`.
+
+- **Live:** frontend https://prognos-chi.vercel.app · backend https://prognos-api.onrender.com ·
+  Neon Postgres (Singapore). Google login working; lands on `/dashboard`.
+- **Go-live fixes (commits):** `a805e8c` Render region → Singapore; `567a4c4` migrations moved
+  into Docker `CMD` (free tier has no `preDeployCommand`) + alembic files copied into image +
+  alembic TLS; `ed7675c` frontend API base defaults to `""` (proxy) in prod (Vercel rejects empty
+  env var); `62dd121` empty commit to re-trigger a stale Vercel build.
+- **Gotchas documented:** free-tier no pre-deploy hook, Vercel no empty env var, `FRONTEND_URL`
+  default `localhost` after login, stale Vercel build — all in `docs/deployment_execution.md`.
+- **Remaining:** cron-job.org jobs (keep-warm `GET /health` 10m, `POST /cron/sync-contests` 4h,
+  `POST /cron/sync-handles` 6h with `X-Cron-Secret`).
 
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]
