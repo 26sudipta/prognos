@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  Lightbulb,
   Calendar,
   Link2,
   GraduationCap,
@@ -16,6 +17,7 @@ import { useRouter } from "next/navigation";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/insights",  label: "Insights",  icon: Lightbulb },
   { href: "/contests",  label: "Contests",  icon: Calendar },
   { href: "/handles",   label: "Handles",   icon: Link2 },
   { href: "/classrooms", label: "Classrooms", icon: GraduationCap },

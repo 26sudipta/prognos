@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 5.0 (Landing Page) — DONE. Phase 5 (Mobile) next.
-**Last Updated:** 2026-07-01 (Landing Page — CF handle widget, 11-section marketing page, build clean)
+## Current Status: Phase 5.1 (Insights Page) — DONE. Phase 5 (Mobile) or Phase 6 (AI Layer) next.
+**Last Updated:** 2026-06-29 (Insights page — analytics split from dashboard, 0 build errors)
 
 ---
 
@@ -618,6 +618,22 @@ Also added missing test: `test_join_classroom_expired_invite_raises_410`.
 - Social proof section uses placeholder stats and testimonials — must be replaced with real data before external launch (see docs/phase_5_0.md)
 
 **Build:** `npm run build` — 0 TypeScript errors, 0 ESLint errors, `/` is `○ (Static)` prerendered
+
+## Phase 5.1 — Insights Page [DONE]
+**Completed:** 2026-06-29
+
+**Files created/modified:**
+- `frontend/app/(dashboard)/insights/page.tsx` — NEW: orchestrator with 4 parallel fetches (dashboard flags, tags, weaknesses, recs), polling while syncing, NoHandleNudge fallback
+- `frontend/app/(dashboard)/dashboard/page.tsx` — SIMPLIFIED: removed tags/weakness/recs; rating chart now full-width
+- `frontend/app/_components/sidebar.tsx` — UPDATED: Insights nav item (Lightbulb icon) added between Dashboard and Contests
+
+**Technical decisions:**
+- All three components (tag-stats, weakness-cards, recommendations) reused as-is — no component rewrites
+- Cross-directory imports: `insights/page.tsx` imports from `../dashboard/_components/` — valid relative path within same route group
+- `Lightbulb` icon chosen over `Brain`/`Sparkles` — doesn't imply AI is already live; can swap to `Brain` when Phase 6 ships
+- Polling loop duplicated on Insights page — users may be on this page when sync runs (just linked handle)
+
+**Build:** `npm run build` — 0 TypeScript errors, 0 ESLint errors, `/insights` is `○ (Static)`
 
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]
