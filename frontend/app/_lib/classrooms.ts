@@ -114,7 +114,12 @@ export async function createClassroom(token: string, name: string): Promise<Clas
     method: "POST",
     body: JSON.stringify({ name }),
   });
-  if (!res.ok) throw new Error("Failed to create classroom");
+  if (!res.ok) {
+    // Surface the backend reason (e.g. "Verify your Codeforces handle before creating a
+    // classroom.") instead of a generic message.
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? "Failed to create classroom");
+  }
   return res.json();
 }
 

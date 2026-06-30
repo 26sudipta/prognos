@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_handle import HandlePlatform, HandleStatus, UserHandle
@@ -64,15 +64,20 @@ async def initiate_verification(
     handle: str,
     platform: HandlePlatform,
 ) -> UserHandle:
-    # Step 1: validate handle exists on CF
-    await fetch_cf_user(handle)
+    # Step 1: validate handle exists on CF. Codeforces handles are case-insensitive, so
+    # adopt CF's canonical spelling for storage and compare case-insensitively everywhere —
+    # otherwise "tourist" vs "Tourist" would dodge the uniqueness check, miss the dormant-row
+    # reuse (re-orphaning synced data), and reset the lockout counter.
+    cf_user = await fetch_cf_user(handle)
+    handle = cf_user.get("handle") or handle
+    handle_lc = handle.lower()
 
     now = datetime.now(UTC)
 
     # Step 2: reject if another verified account already owns this handle
     result = await db.execute(
         select(UserHandle).where(
-            UserHandle.handle == handle,
+            func.lower(UserHandle.handle) == handle_lc,
             UserHandle.platform == platform,
             UserHandle.is_verified.is_(True),
             UserHandle.is_active.is_(True),
@@ -89,7 +94,7 @@ async def initiate_verification(
     await db.execute(
         update(UserHandle)
         .where(
-            UserHandle.handle == handle,
+            func.lower(UserHandle.handle) == handle_lc,
             UserHandle.platform == platform,
             UserHandle.is_verified.is_(False),
             UserHandle.is_active.is_(True),
@@ -141,7 +146,7 @@ async def initiate_verification(
         # loop: the user pasted the old token into CF, and a fresh one would never
         # match. Resetting attempt_count would also turn re-initiate into a lockout
         # bypass, so leave it alone too.
-        same_handle = existing.handle == handle
+        same_handle = existing.handle.lower() == handle_lc
         token_alive = (
             existing.verification_token is not None
             and existing.verification_token_expires_at is not None
@@ -172,7 +177,7 @@ async def initiate_verification(
         .where(
             UserHandle.user_id == user_id,
             UserHandle.platform == platform,
-            UserHandle.handle == handle,
+            func.lower(UserHandle.handle) == handle_lc,
             UserHandle.is_active.is_(False),
         )
         .order_by(UserHandle.created_at.desc())
@@ -180,6 +185,7 @@ async def initiate_verification(
     )
     dormant = result.scalar_one_or_none()
     if dormant is not None:
+        dormant.handle = handle  # normalize to CF's canonical spelling
         dormant.is_active = True
         dormant.is_verified = False  # must re-prove ownership; data stays attached
         dormant.status = HandleStatus.ACTIVE

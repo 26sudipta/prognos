@@ -105,6 +105,39 @@ async def test_initiate_reactivates_dormant_handle_not_duplicate(
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_initiate_blocks_cross_case_duplicate_claim(
+    db_session: AsyncSession, test_user: User
+):
+    """CF handles are case-insensitive — claiming 'Tourist' must collide with a verified
+    'tourist' owned by another user (a case-sensitive check would wrongly allow it)."""
+    other_user = User(
+        email=f"other_{uuid.uuid4()}@test.com",
+        google_id=f"gid_{uuid.uuid4()}",
+        name="Other User",
+    )
+    db_session.add(other_user)
+    await db_session.commit()
+    await db_session.refresh(other_user)
+    await _create_handle(db_session, other_user.id, "tourist", is_verified=True, is_active=True)
+
+    # CF returns the canonical spelling with different case than what's stored.
+    respx.get("https://codeforces.com/api/user.info").mock(
+        return_value=Response(200, json={"status": "OK", "result": [{"handle": "Tourist", "organization": ""}]})
+    )
+
+    from fastapi import HTTPException
+
+    from app.services.handle import initiate_verification
+    with pytest.raises(HTTPException) as exc:
+        await initiate_verification(db_session, test_user.id, "Tourist", HandlePlatform.CODEFORCES)
+    assert exc.value.status_code == 409
+
+    await db_session.delete(other_user)
+    await db_session.commit()
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_initiate_supersedes_unverified_duplicate_from_other_user(
     db_session: AsyncSession, test_user: User
 ):

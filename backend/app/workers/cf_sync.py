@@ -499,6 +499,11 @@ async def _generate_recommendations(
         if not problem:
             problem = _pick_problem(signal.tag, current_rating, solved_ids, problems, expand=True)
         if not problem:
+            logger.warning(
+                "No unsolved problem found for tag '%s' near rating %s (handle %s) — "
+                "recommendation slot skipped",
+                signal.tag, current_rating, handle_id,
+            )
             continue
 
         contest_id = problem.get("contestId", "")

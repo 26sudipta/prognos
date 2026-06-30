@@ -117,7 +117,26 @@ async def _build_classroom_response(
 
 # ── Classroom CRUD ────────────────────────────────────────────────────────────
 
+async def _require_verified_handle(db: AsyncSession, user_id: uuid.UUID, action: str) -> None:
+    """Both teachers (create) and students (join) must own a verified CF handle —
+    every classroom feature (leaderboard, cohort analytics) is built on that data."""
+    handle_result = await db.execute(
+        select(UserHandle).where(
+            UserHandle.user_id == user_id,
+            UserHandle.is_verified.is_(True),
+            UserHandle.is_active.is_(True),
+        )
+    )
+    if not handle_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Verify your Codeforces handle before {action} a classroom.",
+        )
+
+
 async def create_classroom(db: AsyncSession, user: User, name: str) -> ClassroomResponse:
+    await _require_verified_handle(db, user.id, "creating")
+
     classroom = Classroom(name=name.strip(), owner_id=user.id)
     db.add(classroom)
     await db.flush()  # get classroom.id before creating membership
@@ -288,18 +307,7 @@ async def join_classroom(db: AsyncSession, token: str, user: User) -> ClassroomR
     classroom = await _get_classroom_or_404(db, invite.classroom_id)
 
     # 3. Require verified handle
-    handle_result = await db.execute(
-        select(UserHandle).where(
-            UserHandle.user_id == user.id,
-            UserHandle.is_verified.is_(True),
-            UserHandle.is_active.is_(True),
-        )
-    )
-    if not handle_result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Verify your Codeforces handle before joining a classroom.",
-        )
+    await _require_verified_handle(db, user.id, "joining")
 
     # 4. Check not already a member
     existing = await db.execute(

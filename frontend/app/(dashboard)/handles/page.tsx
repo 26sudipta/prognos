@@ -291,6 +291,16 @@ export default function HandlesPage() {
     }
   }, [state.status]);
 
+  // Stop any in-flight verify loop if the user navigates away mid-wait.
+  useEffect(() => () => { verifyCancelRef.current = true; }, []);
+
+  // Token expiry: once the countdown hits 0 the token is dead — block the Verify click
+  // (it would just 410) and point the user at "Start over". `countdown` re-renders us each
+  // second, so this stays current.
+  const tokenExpired =
+    (state.status === "PENDING" || state.status === "FAILED") &&
+    state.expiresAt.getTime() <= Date.now();
+
   async function handleInitiate(e: React.FormEvent) {
     e.preventDefault();
     if (!authToken || !handleInput.trim()) return;
@@ -827,14 +837,21 @@ export default function HandlesPage() {
                     ) : (
                       <div className="space-y-3">
                         {state.status !== "LOCKED" && (
-                          <button
-                            onClick={handleConfirm}
-                            disabled={submitting}
-                            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
-                          >
-                            <Shield className="w-4 h-4" />
-                            I&apos;ve done it — Verify
-                          </button>
+                          <>
+                            <button
+                              onClick={handleConfirm}
+                              disabled={submitting || tokenExpired}
+                              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+                            >
+                              <Shield className="w-4 h-4" />
+                              I&apos;ve done it — Verify
+                            </button>
+                            {tokenExpired && (
+                              <p className="text-xs text-warning-400 text-center">
+                                This token expired. Hit &ldquo;Start over&rdquo; for a fresh one.
+                              </p>
+                            )}
+                          </>
                         )}
 
                         <button

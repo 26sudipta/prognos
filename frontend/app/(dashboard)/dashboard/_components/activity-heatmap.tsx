@@ -31,19 +31,21 @@ function buildGrid(heatmap: HeatmapDay[]): Cell[][] {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
 
-  // Anchor so the rightmost column always contains today's cell
+  // Keys come from the API as UTC calendar dates, so do ALL grid arithmetic in UTC too —
+  // mixing local getDate/setDate with UTC toISOString keys shifts cells by a day for users
+  // off UTC (e.g. IST), making today look empty.
   const endSunday = new Date(today);
-  endSunday.setDate(today.getDate() - today.getDay());
+  endSunday.setUTCDate(today.getUTCDate() - today.getUTCDay());
 
   const start = new Date(endSunday);
-  start.setDate(endSunday.getDate() - 51 * 7);
+  start.setUTCDate(endSunday.getUTCDate() - 51 * 7);
 
   const weeks: Cell[][] = [];
   for (let w = 0; w < 52; w++) {
     const week: Cell[] = [];
     for (let d = 0; d < 7; d++) {
       const cell = new Date(start);
-      cell.setDate(start.getDate() + w * 7 + d);
+      cell.setUTCDate(start.getUTCDate() + w * 7 + d);
       const key = cell.toISOString().slice(0, 10);
       const day = lookup.get(key);
       week.push({ date: key, count: day?.count ?? 0, solved: day?.solved ?? 0, isFuture: key > todayStr });

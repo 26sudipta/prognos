@@ -36,6 +36,14 @@ export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<Async<DashboardData>>(undefined);
   const [ratingHistory, setRatingHistory] = useState<Async<RatingEntry[]>>(undefined);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollErrorsRef = useRef(0);
+
+  function stopPoll() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
 
   function loadAll(tok: string) {
     fetchDashboard(tok)
@@ -43,24 +51,25 @@ export default function DashboardPage() {
         setDashboard(d);
         if (d.is_syncing) {
           if (!pollRef.current) {
+            pollErrorsRef.current = 0;
             pollRef.current = setInterval(() => {
               fetchDashboard(tok)
                 .then((fresh) => {
+                  pollErrorsRef.current = 0;
                   setDashboard(fresh);
                   if (!fresh.is_syncing) {
-                    clearInterval(pollRef.current!);
-                    pollRef.current = null;
+                    stopPoll();
                     fetchRatingHistory(tok).then(setRatingHistory).catch(() => setRatingHistory([]));
                   }
                 })
-                .catch(() => {});
+                .catch(() => {
+                  // Give up after repeated failures instead of polling forever.
+                  if (++pollErrorsRef.current >= 5) stopPoll();
+                });
             }, 5000);
           }
         } else {
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-          }
+          stopPoll();
         }
       })
       .catch(() => setDashboard(EMPTY_DASHBOARD));
@@ -71,9 +80,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!token) return;
     loadAll(token);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    return stopPoll;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 

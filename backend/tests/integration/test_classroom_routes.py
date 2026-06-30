@@ -64,6 +64,9 @@ async def teacher_user(db_session: AsyncSession):
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
+    # A teacher must own a verified handle to create a classroom.
+    db_session.add(_make_handle(user.id, handle=f"teach_{str(uuid.uuid4())[:6]}"))
+    await db_session.commit()
     yield user
     try:
         await db_session.delete(user)
@@ -121,6 +124,24 @@ async def test_create_classroom_creates_teacher_membership(db_session: AsyncSess
     assert result.my_role == "teacher"
     assert result.member_count == 1
     assert result.owner_id == teacher_user.id
+
+
+@pytest.mark.asyncio
+async def test_create_classroom_requires_verified_handle(db_session: AsyncSession):
+    """Only a user with a verified CF handle can become a teacher."""
+    from fastapi import HTTPException
+
+    unverified = _make_user("_unverified")
+    db_session.add(unverified)
+    await db_session.commit()
+    await db_session.refresh(unverified)
+
+    with pytest.raises(HTTPException) as exc:
+        await create_classroom(db_session, unverified, "No Handle Class")
+    assert exc.value.status_code == 403
+
+    await db_session.delete(unverified)
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
