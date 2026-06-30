@@ -15,7 +15,7 @@ type State =
   | { status: "invalid"; errorCode: string }
   | { status: "unauthenticated"; classroom_name: string; member_count: number }
   | { status: "no_handle"; classroom_name: string }
-  | { status: "already_member"; classroom_name: string; classroomId: string }
+  | { status: "already_member"; classroom_name: string }
   | { status: "ready"; classroom_name: string; member_count: number }
   | { status: "joining" }
   | { status: "error"; message: string; classroom_name: string };
@@ -67,8 +67,7 @@ export default function JoinPage() {
 
     init();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inviteToken, authToken]);
+  }, [inviteToken, authToken, user]);
 
   async function handleJoin() {
     if (!authToken || state.status !== "ready") return;
@@ -84,7 +83,7 @@ export default function JoinPage() {
         setState({ status: "no_handle", classroom_name });
       } else if (message.toLowerCase().includes("already")) {
         // We don't have the classroom id here, so go to classrooms list
-        setState({ status: "already_member", classroom_name, classroomId: "" });
+        setState({ status: "already_member", classroom_name });
       } else {
         setState({ status: "error", message, classroom_name });
       }

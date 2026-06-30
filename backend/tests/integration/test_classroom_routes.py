@@ -286,6 +286,25 @@ async def test_join_classroom_revoked_invite_raises_410(
 
 
 @pytest.mark.asyncio
+async def test_join_classroom_expired_invite_raises_410(
+    db_session: AsyncSession, classroom, teacher_user: User, student_with_handle: User
+):
+    from fastapi import HTTPException
+    from datetime import timedelta
+    expired = ClassroomInvite(
+        classroom_id=classroom.id,
+        created_by=teacher_user.id,
+        token=f"exp_{uuid.uuid4()}",
+        expires_at=datetime.now(UTC) - timedelta(hours=1),
+    )
+    db_session.add(expired)
+    await db_session.commit()
+    with pytest.raises(HTTPException) as exc:
+        await join_classroom(db_session, expired.token, student_with_handle)
+    assert exc.value.status_code == 410
+
+
+@pytest.mark.asyncio
 async def test_join_classroom_invalid_token_raises_404(db_session: AsyncSession, student_with_handle: User):
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc:
@@ -416,7 +435,8 @@ async def test_cohort_student_raises_403(
 @pytest.mark.asyncio
 async def test_cohort_empty_leaderboard(db_session: AsyncSession, classroom, teacher_user: User):
     result = await get_cohort_analytics(db_session, classroom.id, teacher_user.id)
-    assert result.member_count == 0
+    # member_count is actual membership count (1 = teacher), not leaderboard cache rows
+    assert result.member_count == 1
     assert result.class_average_rating is None
     assert result.most_neglected_tags == []
     assert result.student_attendance == []

@@ -15,7 +15,7 @@ from app.core.security import (
     hash_token,
     refresh_token_expires_at,
 )
-from app.models.classroom import Classroom
+from app.models.classroom import Classroom, ClassroomLeaderboard, ClassroomMembership
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -213,5 +213,12 @@ async def soft_delete_user(db: AsyncSession, user_id: str) -> None:
             RefreshToken.revoked_at.is_(None),
         )
         .values(revoked_at=datetime.now(UTC))
+    )
+    # Remove student memberships and their cached leaderboard rows
+    await db.execute(
+        delete(ClassroomLeaderboard).where(ClassroomLeaderboard.user_id == user_id)
+    )
+    await db.execute(
+        delete(ClassroomMembership).where(ClassroomMembership.user_id == user_id)
     )
     await db.commit()

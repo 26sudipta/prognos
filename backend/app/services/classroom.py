@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -313,7 +314,7 @@ async def join_classroom(db: AsyncSession, token: str, user: User) -> ClassroomR
             detail="You're already a member of this classroom",
         )
 
-    # 5. Create membership
+    # 5. Create membership (unique constraint guards against concurrent joins)
     membership = ClassroomMembership(
         classroom_id=classroom.id,
         user_id=user.id,
@@ -321,7 +322,14 @@ async def join_classroom(db: AsyncSession, token: str, user: User) -> ClassroomR
         invite_id=invite.id,
     )
     db.add(membership)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You're already a member of this classroom",
+        )
 
     count = await _member_count(db, classroom.id)
     return ClassroomResponse(
@@ -529,10 +537,11 @@ async def get_cohort_analytics(
         reverse=True,
     )
 
+    actual_member_count = await _member_count(db, classroom_id)
     return CohortAnalytics(
         classroom_id=classroom.id,
         classroom_name=classroom.name,
-        member_count=len(entries),
+        member_count=actual_member_count,
         class_average_rating=class_average_rating,
         most_neglected_tags=most_neglected,
         lowest_success_tags=lowest_success,
