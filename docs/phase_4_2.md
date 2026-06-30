@@ -148,3 +148,36 @@ cd backend
 ---
 
 **Next:** Phase 4.3 — Leaderboard Celery worker + cohort analytics.
+
+---
+
+## Updates
+
+### QA Audit Fixes (2026-06-30)
+
+Two bugs found during post-implementation code review:
+
+**1. Race condition in `join_classroom` → unhandled 500**
+
+The "already a member" check and the INSERT were two separate operations with no lock between them. Two simultaneous requests from the same user could both pass the check and both attempt the INSERT. The second would hit the `uq_classroom_memberships` unique constraint and raise a raw `IntegrityError` → 500.
+
+Fix: wrap the `await db.commit()` in a `try/except IntegrityError`, rollback, and raise 409:
+```python
+try:
+    await db.commit()
+except IntegrityError:
+    await db.rollback()
+    raise HTTPException(status_code=409, detail="You're already a member of this classroom")
+```
+
+**2. `cohort_analytics.member_count` undercounted**
+
+`member_count=len(entries)` counted `ClassroomLeaderboard` cache rows — not actual memberships. Students who joined after the last hourly rebuild but before the next one had a membership row but no leaderboard row yet, causing them to be excluded from the count.
+
+Fix: replaced with `actual_member_count = await _member_count(db, classroom_id)` — the same helper used by `get_leaderboard`.
+
+**3. Missing test coverage: expired invite on `join_classroom`**
+
+The expired-invite path existed in the service (`invite.expires_at < datetime.now(UTC) → 410`) but no integration test exercised it. `join_preview` had an expired test but `join_classroom` did not. Test added: `test_join_classroom_expired_invite_raises_410`.
+
+**Test count after fixes:** 127 passed (was 126).

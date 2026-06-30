@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: Phase 4 — DONE. All 4 slices complete (DB, backend, Celery worker, frontend). Phase 5 next.
-**Last Updated:** 2026-06-29 (Phase 4.4 — Frontend classroom pages complete; build clean)
+## Current Status: Phase 4 — DONE + QA audit complete. 5 bugs fixed. Phase 5 next.
+**Last Updated:** 2026-06-30 (Phase 4 QA Audit — 5 bugs fixed, 127 tests passing)
 
 ---
 
@@ -582,6 +582,23 @@ Full audit of all Phase 3 code (backend + frontend). Four bugs found and fixed.
 - Inline two-step confirm (not modal) for destructive actions — sufficient for simple yes/no without additional input
 
 **Build:** `npm run build` — 0 TypeScript errors, 0 ESLint errors, 11 routes
+
+### 4.5 Phase 4 QA Audit [DONE]
+**Completed:** 2026-06-30
+
+Full code review + subagent audit of all Phase 4 classroom code. 5 real bugs found and fixed.
+
+| Severity | Bug | Fix |
+|---|---|---|
+| HIGH | `join_classroom` race condition — concurrent double-join raised unhandled 500 | Catch `IntegrityError`, rollback, return 409 |
+| HIGH | `soft_delete_user` left student memberships + leaderboard rows alive — PII persisted on classroom | Added `DELETE ClassroomMembership` + `DELETE ClassroomLeaderboard` for user |
+| MEDIUM | `cohort_analytics.member_count = len(entries)` — counted cache rows, not actual members | Replaced with `await _member_count(db, classroom_id)` |
+| MEDIUM | Join page `useEffect` missing `user` in deps — session-restore race stranded page on "unauthenticated" | Added `user` to dependency array |
+| LOW | `already_member` state had dead `classroomId: ""` field — never used, misleading type | Removed field from discriminated union type |
+
+Also added missing test: `test_join_classroom_expired_invite_raises_410`.
+
+**Test count:** 127 passed (was 126)
 
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]

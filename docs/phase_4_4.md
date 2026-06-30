@@ -196,3 +196,37 @@ Browser smoke tests (with backend running):
 ---
 
 **Phase 4 complete.** Next phase: Phase 5 — Social Feed / Activity Sharing (TBD per requirement.md).
+
+---
+
+## Updates
+
+### QA Audit Fixes (2026-06-30)
+
+Two bugs found in the join page during post-implementation review:
+
+**1. Session-restore race condition (`user` missing from `useEffect` deps)**
+
+`useAuth()` populates `authToken` and `user` in two separate React state updates. On page load with an existing session (restore via refresh cookie), `authToken` can become truthy before `user` is populated. The `useEffect` ran with `!user === true` and set state to `"unauthenticated"`. Since neither `inviteToken` nor `authToken` changed after `user` populated, the effect never re-ran, leaving the user stuck on the sign-in prompt even though they were logged in.
+
+Fix: added `user` to the dependency array:
+```ts
+// Before (suppressed with eslint-disable):
+}, [inviteToken, authToken]);
+
+// After:
+}, [inviteToken, authToken, user]);
+```
+
+**2. Dead `classroomId: ""` field in `already_member` state**
+
+The `already_member` discriminated union state carried a `classroomId: string` field that was always set to `""`. The "Go to My Classrooms" button routed to `/classrooms` regardless — it never used `classroomId`. This was dead code that made the type misleading.
+
+Fix: removed `classroomId` from the `already_member` state type entirely.
+
+**auth service fix (also from this audit):** `soft_delete_user` did not clean up student memberships or leaderboard rows. After account deletion, a user's cached stats (including their handle and rating) remained visible on classroom leaderboards indefinitely. Fixed by adding:
+```python
+await db.execute(delete(ClassroomLeaderboard).where(ClassroomLeaderboard.user_id == user_id))
+await db.execute(delete(ClassroomMembership).where(ClassroomMembership.user_id == user_id))
+```
+before `await db.commit()` in `soft_delete_user`. The owner-classroom guard (409) runs first, so these deletes only apply to student memberships.
