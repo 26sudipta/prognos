@@ -267,6 +267,31 @@ cd backend && .venv/bin/python -m pytest tests/ -v
 
 ---
 
+## Updates
+
+### 2026-06-30 — Patient verify: one click, several spaced re-checks with a progress bar
+
+**Problem.** Users clicked **Verify** the instant they pasted the token, before Codeforces
+reflected the Organization field, hit the error, and gave up. A single round-trip can't beat
+CF's propagation delay, and a bare spinner gave no reason to wait.
+
+**Change (frontend `handleConfirm`).** One Verify click now runs a patient loop —
+`VERIFY_ATTEMPTS` (5) re-checks, `VERIFY_INTERVAL_MS` (30s) apart (~2.5 min window):
+- Succeeds the moment any re-check passes → SUCCESS.
+- `410` (expired) and `423` (locked) stop the loop immediately; transient (5xx/network)
+  errors are retried within it.
+- Only after all attempts fail → FAILED with the "open settings/social, paste, **Save**,
+  retry" guidance (the raw "N attempts remaining" line was dropped — one click now spends
+  several backend calls, so that number was misleading).
+- A **progress bar + live percentage** with "Checking… / next check in Ns · attempt x/5"
+  keeps users from leaving mid-wait; a **Cancel** button stops the loop (`verifyCancelRef`).
+
+**Backend pairing.** `MAX_VERIFY_ATTEMPTS` 10 → **30** so a couple of full patient sessions
+(each spends up to 5 attempts) can't trip the 15-min lockout. The per-call CF poll, stable
+token, and refresh-resume from the earlier fix all still apply.
+
+---
+
 ## Next
 
 **Phase 2.1 — Celery + CF Sync Worker:** Once a handle is verified, trigger a full historical sync of submissions and rating changes from the Codeforces API. This is the first Phase 2 task and the first time the dashboard shows real data.

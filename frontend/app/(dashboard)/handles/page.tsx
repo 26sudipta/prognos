@@ -189,6 +189,21 @@ function TokenDisplay({ token }: { token: string }) {
   );
 }
 
+// ─── Verify polling config ──────────────────────────────────────────────────
+// One "Verify" click patiently re-checks Codeforces several times, spaced apart, so a
+// user who clicks before CF reflects their Organization field still succeeds without
+// having to babysit it. A progress bar keeps them from leaving mid-wait.
+const VERIFY_ATTEMPTS = 5;
+const VERIFY_INTERVAL_MS = 30_000;
+
+type VerifyProgress = {
+  attempt: number;
+  total: number;
+  pct: number;
+  phase: "checking" | "waiting";
+  secondsToNext: number;
+};
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function HandlesPage() {
@@ -202,6 +217,9 @@ export default function HandlesPage() {
   // token mismatch. We keep the user on the Verify step with their token intact instead
   // of wrongly telling them "no attempts remaining."
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  // Live progress for the patient multi-attempt verify; null when not verifying.
+  const [verifyProgress, setVerifyProgress] = useState<VerifyProgress | null>(null);
+  const verifyCancelRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Determine countdown target based on state
@@ -304,52 +322,81 @@ export default function HandlesPage() {
     }
   }
 
+  function cancelVerify() {
+    verifyCancelRef.current = true;
+  }
+
   async function handleConfirm() {
     if (!authToken || (state.status !== "PENDING" && state.status !== "FAILED")) return;
+    // Capture now — `state` is PENDING|FAILED here and won't change during the loop.
+    const { handleId, handle, token, expiresAt } = state;
+
     setSubmitting(true);
     setConfirmError(null);
+    verifyCancelRef.current = false;
+
+    const startedAt = Date.now();
+    // Rough window for the progress bar: the inter-attempt waits dominate.
+    const windowMs = (VERIFY_ATTEMPTS - 1) * VERIFY_INTERVAL_MS + VERIFY_ATTEMPTS * 8000;
+    const pctNow = () => Math.min(95, Math.round(((Date.now() - startedAt) / windowMs) * 100));
+
     try {
-      const data = await confirmVerification(authToken, state.handleId);
-      setState({
-        status: "SUCCESS",
-        handle: data.handle,
-        handleId: data.handle_id,
-        verifiedAt: new Date(data.verified_at),
-      });
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 410) {
-          setState({ status: "NO_HANDLE", error: "Your token expired. Enter your handle again to get a fresh one." });
-          return;
-        }
-        if (err.status === 423) {
-          const lockoutMs = Date.now() + 15 * 60 * 1000;
+      for (let i = 0; i < VERIFY_ATTEMPTS; i++) {
+        if (verifyCancelRef.current) return;
+        setVerifyProgress({ attempt: i + 1, total: VERIFY_ATTEMPTS, pct: pctNow(), phase: "checking", secondsToNext: 0 });
+
+        try {
+          const data = await confirmVerification(authToken, handleId);
+          setVerifyProgress({ attempt: i + 1, total: VERIFY_ATTEMPTS, pct: 100, phase: "checking", secondsToNext: 0 });
           setState({
-            status: "LOCKED",
-            handleId: state.handleId,
-            handle: state.handle,
-            lockoutExpiresAt: new Date(lockoutMs),
+            status: "SUCCESS",
+            handle: data.handle,
+            handleId: data.handle_id,
+            verifiedAt: new Date(data.verified_at),
           });
           return;
-        }
-        // Only a real 400 mismatch decrements the attempt budget. Anything else
-        // (timeout, 5xx) is transient — keep the token and let the user retry freely.
-        if (err.status === 400) {
-          setState({
-            status: "FAILED",
-            handleId: state.handleId,
-            handle: state.handle,
-            token: state.token,
-            expiresAt: state.expiresAt,
-            attemptsRemaining: err.attemptsRemaining ?? 0,
-          });
-          return;
+        } catch (err) {
+          // Terminal outcomes — stop the loop immediately.
+          if (err instanceof ApiError && err.status === 410) {
+            setState({ status: "NO_HANDLE", error: "Your token expired. Enter your handle again to get a fresh one." });
+            return;
+          }
+          if (err instanceof ApiError && err.status === 423) {
+            setState({ status: "LOCKED", handleId, handle, lockoutExpiresAt: new Date(Date.now() + 15 * 60 * 1000) });
+            return;
+          }
+
+          const isMismatch = err instanceof ApiError && err.status === 400;
+
+          // Out of attempts → surface the outcome.
+          if (i === VERIFY_ATTEMPTS - 1) {
+            if (isMismatch) {
+              setState({ status: "FAILED", handleId, handle, token, expiresAt, attemptsRemaining: 0 });
+            } else {
+              setConfirmError(
+                "Couldn't reach Codeforces just now — your token is still valid. Wait a moment and verify again.",
+              );
+            }
+            return;
+          }
+
+          // Otherwise it's "not propagated yet" (or a transient blip) — wait, then re-check.
+          const waitUntil = Date.now() + VERIFY_INTERVAL_MS;
+          while (Date.now() < waitUntil) {
+            if (verifyCancelRef.current) return;
+            setVerifyProgress({
+              attempt: i + 1,
+              total: VERIFY_ATTEMPTS,
+              pct: pctNow(),
+              phase: "waiting",
+              secondsToNext: Math.ceil((waitUntil - Date.now()) / 1000),
+            });
+            await new Promise((r) => setTimeout(r, 1000));
+          }
         }
       }
-      setConfirmError(
-        "Couldn't reach Codeforces just now — your token is still valid. Wait a moment and verify again.",
-      );
     } finally {
+      setVerifyProgress(null);
       setSubmitting(false);
     }
   }
@@ -383,6 +430,8 @@ export default function HandlesPage() {
   }
 
   function startOver() {
+    verifyCancelRef.current = true;
+    setVerifyProgress(null);
     setConfirmError(null);
     setHandleInput(
       state.status === "PENDING" || state.status === "FAILED" ? state.handle : "",
@@ -713,12 +762,17 @@ export default function HandlesPage() {
                             Still can&apos;t see the token in your Codeforces Organization field.
                           </p>
                           <p className="text-xs text-text-muted mt-0.5">
-                            Make sure you pasted it into the <span className="text-text-secondary">Organization</span>{" "}
-                            field and clicked <span className="text-text-secondary">Save changes</span> — Codeforces can
-                            take a minute to update. Then verify again.{" "}
-                            {state.attemptsRemaining > 0
-                              ? `${state.attemptsRemaining} attempt${state.attemptsRemaining !== 1 ? "s" : ""} remaining.`
-                              : "No attempts remaining."}
+                            We re-checked for ~2 minutes and still didn&apos;t see it. Open{" "}
+                            <a
+                              href="https://codeforces.com/settings/social"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-text-secondary underline hover:text-text-primary"
+                            >
+                              settings/social
+                            </a>
+                            , paste the token into the <span className="text-text-secondary">Organization</span> field,
+                            click <span className="text-text-secondary">Save changes</span>, then hit Verify again.
                           </p>
                         </div>
                       </motion.div>
@@ -736,36 +790,62 @@ export default function HandlesPage() {
                       </motion.div>
                     )}
 
-                    {/* Action buttons */}
-                    <div className="space-y-3">
-                      {state.status !== "LOCKED" && (
+                    {/* Patient verify progress — one click, several spaced re-checks */}
+                    {verifyProgress && state.status !== "LOCKED" ? (
+                      <div className="space-y-3">
+                        <div className="px-4 py-4 bg-bg-base rounded-xl border border-border-default">
+                          <div className="flex items-baseline justify-between mb-2">
+                            <span className="text-sm font-medium text-text-primary flex items-center gap-2">
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary-400" />
+                              {verifyProgress.phase === "checking"
+                                ? "Checking Codeforces…"
+                                : `Waiting for Codeforces — next check in ${verifyProgress.secondsToNext}s`}
+                            </span>
+                            <span className="font-mono text-lg font-semibold text-primary-400 tabular-nums">
+                              {verifyProgress.pct}%
+                            </span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-bg-surface-raised overflow-hidden">
+                            <motion.div
+                              className="h-full bg-primary-500 rounded-full"
+                              animate={{ width: `${verifyProgress.pct}%` }}
+                              transition={{ ease: "linear", duration: 0.4 }}
+                            />
+                          </div>
+                          <p className="text-xs text-text-muted mt-2">
+                            Attempt {verifyProgress.attempt} of {verifyProgress.total} · CF can take a minute to
+                            update — hang tight, we&apos;ll keep checking.
+                          </p>
+                        </div>
                         <button
-                          onClick={handleConfirm}
-                          disabled={submitting}
-                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+                          onClick={cancelVerify}
+                          className="w-full py-2.5 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-bg-surface-raised transition-all duration-150"
                         >
-                          {submitting ? (
-                            <>
-                              <RefreshCw className="w-4 h-4 animate-spin" />
-                              Checking Codeforces… this can take a few seconds
-                            </>
-                          ) : (
-                            <>
-                              <Shield className="w-4 h-4" />
-                              I've done it — Verify
-                            </>
-                          )}
+                          Cancel
                         </button>
-                      )}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {state.status !== "LOCKED" && (
+                          <button
+                            onClick={handleConfirm}
+                            disabled={submitting}
+                            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+                          >
+                            <Shield className="w-4 h-4" />
+                            I&apos;ve done it — Verify
+                          </button>
+                        )}
 
-                      <button
-                        onClick={startOver}
-                        disabled={submitting}
-                        className="w-full py-2.5 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-bg-surface-raised transition-all duration-150 disabled:opacity-40"
-                      >
-                        Start over
-                      </button>
-                    </div>
+                        <button
+                          onClick={startOver}
+                          disabled={submitting}
+                          className="w-full py-2.5 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-bg-surface-raised transition-all duration-150 disabled:opacity-40"
+                        >
+                          Start over
+                        </button>
+                      </div>
+                    )}
                   </motion.div>
                 )}
 

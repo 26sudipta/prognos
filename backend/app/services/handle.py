@@ -13,7 +13,10 @@ from app.models.user_handle import HandlePlatform, HandleStatus, UserHandle
 CF_USER_INFO_URL = "https://codeforces.com/api/user.info"
 TOKEN_PREFIX = "PGS-"
 TOKEN_EXPIRY_MINUTES = 60
-MAX_VERIFY_ATTEMPTS = 10
+# The frontend issues a patient burst of confirm calls per click (it polls CF for ~2.5
+# min while the org field propagates), so one user action can spend several attempts.
+# Keep the cap high enough that a couple of full patient sessions never trip the lockout.
+MAX_VERIFY_ATTEMPTS = 30
 LOCKOUT_HOURS = 0.25  # 15 minutes — soft cooldown, not a punishment
 
 # A single "Verify" click polls Codeforces a few times before giving up, so that the
