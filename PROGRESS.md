@@ -1,7 +1,7 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: LIVE — web app deployed free (Vercel + Render + Neon). Remaining: cron-job.org keep-warm/sync.
-**Last Updated:** 2026-06-30 (Go-live D0–D6 — frontend + backend + DB live, Google login working)
+## Current Status: LIVE & COMPLETE — web app deployed free (Vercel + Render + Neon + cron-job.org).
+**Last Updated:** 2026-06-30 (Go-live done — frontend + backend + DB + cron all working, login verified)
 
 ---
 
@@ -683,8 +683,8 @@ without the secret.
   env var); `62dd121` empty commit to re-trigger a stale Vercel build.
 - **Gotchas documented:** free-tier no pre-deploy hook, Vercel no empty env var, `FRONTEND_URL`
   default `localhost` after login, stale Vercel build — all in `docs/deployment_execution.md`.
-- **Remaining:** cron-job.org jobs (keep-warm `GET /health` 10m, `POST /cron/sync-contests` 4h,
-  `POST /cron/sync-handles` 6h with `X-Cron-Secret`).
+- **cron-job.org [DONE]:** keep-warm `GET /health` 10m, `POST /cron/sync-contests` 4h,
+  `POST /cron/sync-handles` 6h (with `X-Cron-Secret`) — all verified working. **Deployment complete.**
 
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]

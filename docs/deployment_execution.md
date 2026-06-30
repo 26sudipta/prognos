@@ -114,10 +114,12 @@ On the existing Web OAuth client, added:
 ---
 
 ## Remaining steps
-- [ ] **cron-job.org** (free) — three jobs against the Render URL with the `X-Cron-Secret` header:
+- [x] **cron-job.org** (free) — three jobs against the Render URL, all verified working:
   - `GET /api/v1/health` every ~10 min (keep-warm, avoids cold starts)
-  - `POST /api/v1/cron/sync-contests` every 4h
-  - `POST /api/v1/cron/sync-handles` every 6h
+  - `POST /api/v1/cron/sync-contests` every 4h (`X-Cron-Secret` header)
+  - `POST /api/v1/cron/sync-handles` every 6h (`X-Cron-Secret` header)
+  - Note: a browser GET on the POST-only cron URLs returns 405 (expected); the keep-warm job may
+    log one "timeout" on a cold start but still wakes the server.
 - [ ] Commit the 3 WIP frontend files (`recommendations.tsx`, `weakness-cards.tsx`,
   `layout.tsx`) if desired — they were intentionally left out of this deploy.
 
