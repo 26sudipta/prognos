@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -12,16 +13,28 @@ from app.models.user_handle import HandlePlatform, HandleStatus, UserHandle
 CF_USER_INFO_URL = "https://codeforces.com/api/user.info"
 TOKEN_PREFIX = "PGS-"
 TOKEN_EXPIRY_MINUTES = 60
-MAX_VERIFY_ATTEMPTS = 5
-LOCKOUT_HOURS = 1
+MAX_VERIFY_ATTEMPTS = 10
+LOCKOUT_HOURS = 0.25  # 15 minutes — soft cooldown, not a punishment
+
+# A single "Verify" click polls Codeforces a few times before giving up, so that the
+# common case (user just pasted the token and CF hasn't reflected it yet) succeeds
+# without surfacing an error or burning an attempt. The whole click counts as at most
+# one attempt regardless of how many inner reads we make.
+#
+# The total request time is bounded so it stays under the production gateway budget
+# (Vercel rewrite → Render): worst case = ATTEMPTS * CF_TIMEOUT + (ATTEMPTS-1) * DELAY
+# = 3*6 + 2*2.5 = 23s; nominal (fast CF reads) ≈ 5–6s.
+CONFIRM_POLL_ATTEMPTS = 3
+CONFIRM_POLL_DELAY_SECONDS = 2.5
+CONFIRM_CF_TIMEOUT_SECONDS = 6.0
 
 
 def generate_verification_token() -> str:
     return TOKEN_PREFIX + secrets.token_hex(3).upper()
 
 
-async def fetch_cf_user(handle: str) -> dict:
-    async with httpx.AsyncClient(timeout=10.0) as client:
+async def fetch_cf_user(handle: str, timeout: float = 10.0) -> dict:
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(CF_USER_INFO_URL, params={"handles": handle})
     data = resp.json()
     if resp.status_code != 200 or data.get("status") != "OK":
@@ -118,6 +131,23 @@ async def initiate_verification(
                 status_code=status.HTTP_423_LOCKED,
                 detail="Handle is locked due to too many failed attempts. Try again after the lockout expires.",
             )
+
+        # Stable token: if the user re-initiates the same handle while the existing
+        # token is still alive, return it untouched — same token, same expiry, same
+        # attempt count. Regenerating here is the root cause of the "never verifies"
+        # loop: the user pasted the old token into CF, and a fresh one would never
+        # match. Resetting attempt_count would also turn re-initiate into a lockout
+        # bypass, so leave it alone too.
+        same_handle = existing.handle == handle
+        token_alive = (
+            existing.verification_token is not None
+            and existing.verification_token_expires_at is not None
+            and existing.verification_token_expires_at > now
+        )
+        if same_handle and token_alive:
+            return existing
+
+        # Handle changed or token is dead → issue a fresh one and reset the budget.
         existing.handle = handle
         existing.verification_token = token
         existing.verification_token_expires_at = expires_at
@@ -176,11 +206,22 @@ async def confirm_verification(
             detail="Verification token has expired. Please re-initiate.",
         )
 
-    # Call CF API — check organization field only
-    cf_user = await fetch_cf_user(row.handle)
-    cf_org = cf_user.get("organization", "").strip()
+    # Poll CF for the organization field. Codeforces can take a little while to reflect
+    # a profile change, so a single read right after the user pastes the token often
+    # misses it. Retry a few times within this one request and succeed as soon as any
+    # read matches — the user only had to click once.
+    expected = row.verification_token
+    matched = False
+    for poll in range(CONFIRM_POLL_ATTEMPTS):
+        cf_user = await fetch_cf_user(row.handle, timeout=CONFIRM_CF_TIMEOUT_SECONDS)
+        cf_org = cf_user.get("organization", "").strip()
+        if cf_org == expected:
+            matched = True
+            break
+        if poll < CONFIRM_POLL_ATTEMPTS - 1:
+            await asyncio.sleep(CONFIRM_POLL_DELAY_SECONDS)
 
-    if cf_org == row.verification_token:
+    if matched:
         row.is_verified = True
         row.verified_at = now
         row.verification_token = None
@@ -190,7 +231,7 @@ async def confirm_verification(
         await db.refresh(row)
         return row
 
-    # Token mismatch
+    # Token still not visible after the poll — count the whole click as ONE attempt.
     row.verification_attempt_count += 1
     if row.verification_attempt_count >= MAX_VERIFY_ATTEMPTS:
         row.is_locked = True

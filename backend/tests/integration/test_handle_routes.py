@@ -105,9 +105,12 @@ async def test_initiate_supersedes_unverified_duplicate_from_other_user(
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_initiate_updates_own_pending_row_not_duplicate(
+async def test_initiate_keeps_token_for_same_handle_not_duplicate(
     db_session: AsyncSession, test_user: User
 ):
+    """Re-initiating the same handle while the token is alive returns it unchanged —
+    this is the core fix for the "never verifies" loop (a regenerated token would no
+    longer match what the user already pasted into Codeforces)."""
     token_before = "PGS-AABBCC"
     existing = await _create_handle(
         db_session,
@@ -116,6 +119,8 @@ async def test_initiate_updates_own_pending_row_not_duplicate(
         token=token_before,
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
+    existing.verification_attempt_count = 2
+    await db_session.commit()
 
     respx.get("https://codeforces.com/api/user.info").mock(
         return_value=Response(200, json=CF_OK)
@@ -124,10 +129,10 @@ async def test_initiate_updates_own_pending_row_not_duplicate(
     from app.services.handle import initiate_verification
     updated = await initiate_verification(db_session, test_user.id, "tourist", HandlePlatform.CODEFORCES)
 
-    # Same row, new token
+    # Same row, SAME token, attempt budget preserved (no lockout-reset bypass)
     assert updated.id == existing.id
-    assert updated.verification_token != token_before
-    assert updated.verification_attempt_count == 0
+    assert updated.verification_token == token_before
+    assert updated.verification_attempt_count == 2
 
     # No second active row was created
     result = await db_session.execute(

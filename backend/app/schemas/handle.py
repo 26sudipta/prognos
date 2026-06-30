@@ -41,6 +41,11 @@ class HandleResponse(BaseModel):
     verified_at: datetime | None
     last_synced_at: datetime | None
     lockout_expires_at: datetime | None
+    # Owner-only in-flight verification state — lets the frontend resume the pending
+    # step after a refresh instead of dropping back to "enter handle" and minting a
+    # new token. Only ever the caller's own single-use, expiring token.
+    verification_token: str | None
+    verification_token_expires_at: datetime | None
 
     model_config = {"from_attributes": True}
 

@@ -156,6 +156,40 @@ POST /handles/verify/confirm → 200 OK
 { "handle": "sudiptadas", "verified_at": "..." }
 ```
 
+### 2026-06-30 — Fixed the "never verifies" loop (stable token + patient poll)
+
+**The bug.** Real users repeatedly failed to verify and gave up. Three compounding causes:
+
+1. **Token regeneration on re-initiate (root cause).** The frontend doesn't keep the access token across a page refresh, and `GET /handles` didn't return the in-flight token, so after any refresh the wizard fell back to "enter handle." The user re-entered the handle → `initiate_verification` **regenerated the token**, overwriting the one already pasted into Codeforces. The pasted token could then *never* match — a permanent loop ending in lockout.
+2. **Single instant CF read on confirm.** `confirm_verification` did one `user.info` read. Codeforces takes time to reflect an Organization change (and users sometimes forget to click *Save*), so the first click usually failed and burned an attempt.
+3. **Too-aggressive lockout.** 5 misses → 1-hour lock punished honest users hitting CF's propagation delay.
+
+**The fix:**
+
+| Area | Before | After | Why |
+|---|---|---|---|
+| `initiate_verification` (same handle, live token) | always regenerate token + reset attempts | **return the existing row untouched** — same token, same expiry, same `attempt_count` | Stops the loop at its source; refresh/re-initiate never invalidates the pasted token. Preserving `attempt_count` also closes a lockout-reset bypass. |
+| `initiate_verification` (handle changed or token expired) | — | issue a fresh token, reset budget | The only cases where a new token is actually warranted. |
+| `confirm_verification` | one CF read, then error | **poll CF up to `CONFIRM_POLL_ATTEMPTS` (3) times, 2.5s apart**, succeed on first match | One click waits ~5–6s for CF to propagate before failing — catches the common "just pasted it" case. |
+| Per-read timeout (confirm) | 10s | **6s** (`CONFIRM_CF_TIMEOUT_SECONDS`) | Bounds worst-case request time to ~23s, comfortably under the production gateway budget (Vercel rewrite → Render). |
+| Attempt counting | per read | **at most one** per click (incremented only after the whole poll exhausts), and **only on a real `400` mismatch** | The poll must never drain the lockout budget; gateway timeouts / 5xx must not burn an attempt either. |
+| `MAX_VERIFY_ATTEMPTS` | 5 | **10** | More forgiving of propagation-delay misses. |
+| `LOCKOUT_HOURS` | 1 | **0.25 (15 min)** | A soft cooldown, not a punishment. |
+| `HandleResponse` schema | — | added owner-only `verification_token` + `verification_token_expires_at` | Lets the frontend resume the Verify step (with the **same** token) after a refresh instead of minting a new one. Safe: it's the caller's own single-use, expiring token. |
+
+**Honest caveat.** CF `user.info` has no reliable cache-bust; if its cache outlives the ~5–6s poll, the click still fails — but stable token + refresh-resume mean the user just waits and clicks Verify again with the *same* token, at no cost.
+
+**"Do I re-verify on every login?" — No.** `upsert_user` keys on `google_id`, `is_verified` is durable, and the frontend shows the SUCCESS state on mount for a verified handle. Verification persists across logins; no change was needed.
+
+**Files changed:**
+- `backend/app/services/handle.py` — stable-token branch in `initiate_verification`; poll loop + one-attempt counting in `confirm_verification`; `MAX_VERIFY_ATTEMPTS`/`LOCKOUT_HOURS` tuning; new `CONFIRM_POLL_*` constants.
+- `backend/app/schemas/handle.py` — `HandleResponse` exposes the in-flight token fields.
+- `frontend/app/(dashboard)/handles/page.tsx` — resume `PENDING` from a live token on mount; "Checking Codeforces…" button copy; "Verifying account `<handle>`" badge with "Wrong handle?"; Save-reminder + rewritten FAILED guidance; 423 lockout countdown now 15 min; transient (gateway/5xx/network) confirm errors keep the token and do **not** show "no attempts remaining" — only a real `400` mismatch transitions to FAILED.
+- `frontend/app/_lib/handles.ts` — `HandleData` gains the two token fields.
+- Tests: `tests/unit/test_handle_service.py` (stable-token + poll + one-attempt cases), `tests/integration/test_handle_routes.py` (re-initiate now asserts token unchanged).
+
+**Verification:** `pytest tests/unit/test_handle_service.py tests/integration/test_handle_routes.py` → 18 passed; `npm run build` → 0 TS/ESLint errors.
+
 ### 7. The 400 Response with Structured Error Detail
 
 When a token doesn't match, the response is:
