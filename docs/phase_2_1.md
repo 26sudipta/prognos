@@ -515,6 +515,63 @@ print('Task ID:', result.id)
 
 ---
 
+## Updates
+
+### 2026-06-30 — Dashboard went blank after handle re-verify (zero submissions, rating still shown)
+
+**Symptom.** After unlinking and re-verifying the same Codeforces handle, the dashboard
+showed `total_solved=0`, `current_streak=0`, an empty heatmap, and Insights had no focus
+areas — **but** CF rating (979, 12 contests) and (stale) recommendations still rendered.
+
+**Diagnosis.** Analytics reads 100% from the DB, keyed on the user's *active + verified*
+handle (`_get_handle_ids`). A sync has two independent pipelines: **submissions**
+(`user.status` → `submissions` → recomputes `daily_activity`, `tag_stats`) and **rating**
+(`user.rating` → `rating_history`). Because the derived tables are recomputed from
+`submissions` every sync, an empty heatmap + 0 solved proves `submissions` was empty for
+the active handle, while the independent `user.rating` call still populated rating.
+
+**Root cause — a GLOBAL unique on `submissions.cf_submission_id`.** Re-verifying creates a
+*new* `user_handles` row (unlink only soft-deletes the old one). The new handle's sync
+re-fetches the same submissions from Codeforces — but `submissions.cf_submission_id` had a
+**global** `UNIQUE` (migration 003), and the insert used
+`ON CONFLICT (cf_submission_id) DO NOTHING`. Every id already existed under the old handle,
+so every insert was a **no-op → 0 rows stored under the active handle**. The derived tables
+recompute from those (zero) rows → blank dashboard. `_fetch_submissions` even *returned*
+the fetched count (~hundreds) while storing nothing, hiding it.
+
+Rating was immune because `rating_history`'s conflict key is **composite**
+`(user_handle_id, cf_contest_id)` (migration 004) — so the same contest stores once per
+handle. That asymmetry is exactly why rating showed but submissions didn't. (The public CF
+API returns this user's submissions fine — confirmed via `user.status?handle=Sudipta_Das` —
+so nothing was wrong upstream; the writes were silently dropped by the constraint.)
+
+**Fixes:**
+
+| Area | Change | Why |
+|---|---|---|
+| **migration 007 + `models/analytics.py`** | Drop the global `UNIQUE(cf_submission_id)`; add composite **`UNIQUE(user_handle_id, cf_submission_id)`** | **The load-bearing fix.** Each handle stores its own submissions; cross-handle re-fetch no longer no-ops |
+| `workers/cf_sync.py` `_fetch_submissions` | Conflict target → `(user_handle_id, cf_submission_id)`; post-insert id lookup scoped by handle; return the **stored** count (not fetched) | Matches the new constraint; `scalar_one()` would break once ids aren't globally unique; honest count |
+| `services/handle.py` `initiate_verification` | Re-verifying a handle the user previously unlinked now **reactivates and reuses the dormant row** (same `id`) instead of creating a new one | Avoids row proliferation + a needless full re-fetch; re-verify is self-healing |
+| `workers/cf_sync.py` `_cf_get` | Remap `from_` → **`from`** (CF's real param name); retry/backoff on `429`/`5xx`/transport errors **and** on CF's `HTTP 200 + status=FAILED + "limit exceeded"** | `from_` was ignored by CF, so pagination past 500 silently refetched page 1; and CF signals rate-limiting as a 200/FAILED body, which previously aborted the whole sync with no retry |
+| `workers/cf_sync.py` `_sync_handle_async` | If a handle ends a sync with **0 submissions but rated contests**, record it in `last_sync_error` and log a warning | Stops a silent-zero sync from looking "COMPLETED & fine"; next cron run retries |
+| `workers/cf_sync.py` `_recompute_tag_stats` | Add `DELETE` before the upsert (parity with `_recompute_daily_activity`) | Stale tags could otherwise linger when submissions shrink and feed bogus weakness signals |
+| `api/.../handles.py` `manual_sync` | Add owner-only `?force=true` to bypass the 30-min cooldown | Lets a user immediately re-sync to recover missing data |
+
+**Recovery for already-affected accounts (in order):**
+1. Deploy — migration 007 runs at container start, swapping the unique constraint.
+2. Force a full re-sync of the active handle: `POST /handles/{id}/sync?force=true`. With the
+   composite key, the re-fetched submissions now insert under the active handle (no global
+   collision with the old row), and all derived tables recompute → dashboard fills.
+   *(Alternative, no re-fetch: `UPDATE submissions SET user_handle_id='<active>' WHERE
+   user_handle_id='<old>'` then resync to recompute.)*
+
+**Verification:** `pytest` → full suite green, including new regression tests:
+`test_submissions_unique.py` (same CF submission id stores under two handle rows; same-handle
+dup is a no-op), the `from`-param remap, the 200/FAILED rate-limit retry, and
+reactivate-dormant-row on re-verify.
+
+---
+
 ## Next: Phase 2.2 — Analytics API
 Build 3 read endpoints that serve pre-computed data directly from the derived tables:
 - `GET /api/v1/analytics/dashboard` — heatmap (365 days), current/longest streak, total solved, CF rating

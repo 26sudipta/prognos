@@ -72,6 +72,39 @@ async def test_initiate_creates_row_in_db(db_session: AsyncSession, test_user: U
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_initiate_reactivates_dormant_handle_not_duplicate(
+    db_session: AsyncSession, test_user: User
+):
+    """Re-verifying a handle the user previously unlinked must REUSE the old (inactive)
+    row, not create a new one — otherwise all synced data (submissions, rating, etc.)
+    is orphaned under the old row and the dashboard goes blank."""
+    dormant = await _create_handle(
+        db_session, test_user.id, "tourist", is_verified=True, is_active=False
+    )
+    old_id = dormant.id
+
+    respx.get("https://codeforces.com/api/user.info").mock(
+        return_value=Response(200, json=CF_OK)
+    )
+
+    from app.services.handle import initiate_verification
+    revived = await initiate_verification(db_session, test_user.id, "tourist", HandlePlatform.CODEFORCES)
+
+    # Same row id → all FK data (submissions, rating_history, ...) stays attached
+    assert revived.id == old_id
+    assert revived.is_active is True
+    assert revived.is_verified is False  # must re-prove ownership before data shows again
+    assert revived.verification_token is not None
+
+    # No duplicate row was created
+    result = await db_session.execute(
+        select(UserHandle).where(UserHandle.user_id == test_user.id)
+    )
+    assert len(result.scalars().all()) == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_initiate_supersedes_unverified_duplicate_from_other_user(
     db_session: AsyncSession, test_user: User
 ):

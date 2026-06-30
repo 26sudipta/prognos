@@ -22,6 +22,50 @@ from app.services.handle import (
 
 
 # ---------------------------------------------------------------------------
+# CF API param remap (the submission-pagination bug)
+# ---------------------------------------------------------------------------
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_cf_get_remaps_from_underscore_to_from():
+    """The CF API expects `from`; callers pass `from_` (Python keyword). If we send the
+    literal `from_`, CF ignores it and pagination silently refetches page 1."""
+    import httpx
+
+    from app.workers.cf_sync import _cf_get
+
+    route = respx.get("https://codeforces.com/api/user.status").mock(
+        return_value=Response(200, json={"status": "OK", "result": []})
+    )
+    async with httpx.AsyncClient() as client:
+        await _cf_get(client, "user.status", handle="tourist", from_=501, count=500)
+
+    url = str(route.calls.last.request.url)
+    assert "from=501" in url
+    assert "from_=" not in url
+
+
+@respx.mock
+@pytest.mark.asyncio
+@patch("app.workers.cf_sync.asyncio.sleep", new_callable=AsyncMock)
+async def test_cf_get_retries_on_200_failed_limit(mock_sleep):
+    """CF rate-limits with HTTP 200 + status=FAILED + 'limit exceeded' — must retry, not abort."""
+    import httpx
+
+    from app.workers.cf_sync import _cf_get
+
+    respx.get("https://codeforces.com/api/user.status").mock(
+        side_effect=[
+            Response(200, json={"status": "FAILED", "comment": "Call limit exceeded"}),
+            Response(200, json={"status": "OK", "result": [{"id": 1}]}),
+        ]
+    )
+    async with httpx.AsyncClient() as client:
+        data = await _cf_get(client, "user.status", handle="tourist")
+    assert data["status"] == "OK"
+
+
+# ---------------------------------------------------------------------------
 # Token format
 # ---------------------------------------------------------------------------
 

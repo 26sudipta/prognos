@@ -72,13 +72,21 @@ async def confirm(
 async def manual_sync(
     handle_id: uuid.UUID,
     background_tasks: BackgroundTasks,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SyncResponse:
     handle = await get_handle_for_user(db, current_user.id, handle_id)
 
+    # `force=true` lets the owner bypass the cooldown to recover a handle whose data
+    # is missing/stale (e.g. a sync that stored 0 submissions). Owner-only via
+    # get_handle_for_user, so it can't be abused against another account.
     cooldown = timedelta(minutes=30)
-    if handle.last_manual_sync_at and datetime.now(UTC) - handle.last_manual_sync_at < cooldown:
+    if (
+        not force
+        and handle.last_manual_sync_at
+        and datetime.now(UTC) - handle.last_manual_sync_at < cooldown
+    ):
         retry_after = int((handle.last_manual_sync_at + cooldown - datetime.now(UTC)).total_seconds())
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

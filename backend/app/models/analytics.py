@@ -11,6 +11,12 @@ from app.models.base import TimestampMixin
 
 class Submission(Base):
     __tablename__ = "submissions"
+    # Uniqueness is per-handle, NOT global: the same CF submission id legitimately
+    # belongs under each user_handle row that owns the account (e.g. after a re-verify
+    # creates a new handle row). A global unique made the new handle's inserts no-op.
+    __table_args__ = (
+        UniqueConstraint("user_handle_id", "cf_submission_id", name="uq_submissions_handle_cf_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         sa.UUID(as_uuid=True),
@@ -23,7 +29,7 @@ class Submission(Base):
         nullable=False,
         index=True,
     )
-    cf_submission_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    cf_submission_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     problem_id: Mapped[str] = mapped_column(String(50), nullable=False)
     problem_name: Mapped[str] = mapped_column(String(500), nullable=False)
     contest_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -158,6 +158,37 @@ async def initiate_verification(
         await db.refresh(existing)
         return existing
 
+    # Step 5b: reactivate an inactive row for the SAME handle instead of orphaning data.
+    # When a user unlinks then re-verifies the same handle, creating a brand-new row
+    # strands all the previously synced data (submissions, rating_history, daily_activity,
+    # tag_stats, recommendations) under the old inactive row — analytics only reads the
+    # active+verified handle, so the dashboard goes blank. Reusing the existing row keeps
+    # its id, so all that FK data comes back the moment verification completes.
+    result = await db.execute(
+        select(UserHandle)
+        .where(
+            UserHandle.user_id == user_id,
+            UserHandle.platform == platform,
+            UserHandle.handle == handle,
+            UserHandle.is_active.is_(False),
+        )
+        .order_by(UserHandle.created_at.desc())
+        .limit(1)
+    )
+    dormant = result.scalar_one_or_none()
+    if dormant is not None:
+        dormant.is_active = True
+        dormant.is_verified = False  # must re-prove ownership; data stays attached
+        dormant.status = HandleStatus.ACTIVE
+        dormant.verification_token = token
+        dormant.verification_token_expires_at = expires_at
+        dormant.verification_attempt_count = 0
+        dormant.is_locked = False
+        dormant.lockout_expires_at = None
+        await db.commit()
+        await db.refresh(dormant)
+        return dormant
+
     # Step 6: create new row
     row = UserHandle(
         user_id=user_id,

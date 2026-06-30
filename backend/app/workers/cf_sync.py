@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 from celery import shared_task
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -113,6 +113,33 @@ async def _sync_handle_async(handle_id: uuid.UUID) -> dict:
             handle.sync_status = HandleSyncStatus.COMPLETED
             handle.last_synced_at = datetime.now(UTC)
             handle.last_sync_error = None
+
+            # Visibility: a handle with rated contests but zero stored submissions almost
+            # always means user.status came back empty/short. Surface it (and let the next
+            # cron run retry) instead of masking it behind the successful rating fetch.
+            total_subs = (
+                await session.execute(
+                    select(func.count()).select_from(Submission).where(
+                        Submission.user_handle_id == handle_id
+                    )
+                )
+            ).scalar_one()
+            total_ratings = (
+                await session.execute(
+                    select(func.count()).select_from(RatingHistory).where(
+                        RatingHistory.user_handle_id == handle_id
+                    )
+                )
+            ).scalar_one()
+            if total_subs == 0 and total_ratings > 0:
+                handle.last_sync_error = (
+                    "user.status returned 0 submissions despite rated contests — "
+                    "will retry on next sync"
+                )
+                logger.warning(
+                    "Sync stored 0 submissions for handle %s (%s) despite %d rated contests",
+                    handle_id, handle.handle, total_ratings,
+                )
             await session.commit()
 
             # Step 6: trigger leaderboard rebuild for every classroom this user belongs to
@@ -133,13 +160,45 @@ async def _sync_handle_async(handle_id: uuid.UUID) -> dict:
 # CF API helpers
 # ---------------------------------------------------------------------------
 
+CF_MAX_RETRIES = 4
+CF_RETRY_BASE_DELAY = 2.0
+
+
+class _CFRateLimited(Exception):
+    """CF returned HTTP 200 + status=FAILED with a 'limit exceeded' comment — retryable."""
+
+
 async def _cf_get(client: httpx.AsyncClient, path: str, **params) -> dict:
-    resp = await client.get(f"{CF_API_BASE}/{path}", params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("status") != "OK":
-        raise RuntimeError(f"CF API error: {data.get('comment', 'unknown')}")
-    return data
+    # `from` is a Python keyword, so callers pass `from_`; CF expects `from`.
+    if "from_" in params:
+        params["from"] = params.pop("from_")
+
+    last_exc: Exception | None = None
+    for attempt in range(CF_MAX_RETRIES):
+        try:
+            resp = await client.get(f"{CF_API_BASE}/{path}", params=params, timeout=30)
+            # CF rate-limits / sheds load with 429 and 5xx — back off and retry.
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise httpx.HTTPStatusError(
+                    f"CF transient {resp.status_code}", request=resp.request, response=resp
+                )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("status") != "OK":
+                comment = data.get("comment", "unknown")
+                # CF signals rate-limiting as HTTP 200 + status=FAILED + "limit exceeded"
+                # (not a 429). Treat that as transient and retry; everything else is fatal.
+                if "limit" in comment.lower():
+                    raise _CFRateLimited(comment)
+                raise RuntimeError(f"CF API error: {comment}")
+            return data
+        except (httpx.TransportError, httpx.HTTPStatusError, _CFRateLimited) as exc:
+            last_exc = exc
+            if attempt < CF_MAX_RETRIES - 1:
+                # Exponential backoff with jitter.
+                await asyncio.sleep(CF_RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1))
+
+    raise RuntimeError(f"CF API unreachable for {path} after {CF_MAX_RETRIES} attempts: {last_exc}")
 
 
 async def _fetch_submissions(
@@ -180,7 +239,10 @@ async def _fetch_submissions(
     if not new_submissions:
         return 0
 
-    # Bulk insert via upsert (skip duplicates)
+    # Bulk insert via upsert (skip duplicates). Conflict target is the COMPOSITE
+    # (user_handle_id, cf_submission_id) — a global cf_submission_id key would no-op the
+    # inserts whenever the same submission already exists under another handle row.
+    stored = 0
     for s in new_submissions:
         prob = s.get("problem", {})
         problem_id = f"{prob.get('contestId', '')}{prob.get('index', '')}"
@@ -197,15 +259,20 @@ async def _fetch_submissions(
             time_ms=s.get("timeConsumedMillis"),
             memory_kb=s.get("memoryConsumedBytes", 0) // 1024 if s.get("memoryConsumedBytes") else None,
             submitted_at=datetime.fromtimestamp(s["creationTimeSeconds"], tz=UTC),
-        ).on_conflict_do_nothing(index_elements=["cf_submission_id"])
+        ).on_conflict_do_nothing(index_elements=["user_handle_id", "cf_submission_id"])
 
         result = await session.execute(stmt)
         if result.rowcount == 0:
-            continue  # already exists
+            continue  # already stored for this handle
+        stored += 1
 
-        # Get inserted row id
+        # Get inserted row id — scope by handle_id, since cf_submission_id is no longer
+        # globally unique (it can exist under multiple handle rows).
         sub_row = await session.execute(
-            select(Submission.id).where(Submission.cf_submission_id == s["id"])
+            select(Submission.id).where(
+                Submission.cf_submission_id == s["id"],
+                Submission.user_handle_id == handle_id,
+            )
         )
         sub_id = sub_row.scalar_one()
 
@@ -218,7 +285,7 @@ async def _fetch_submissions(
             )
 
     await session.commit()
-    return len(new_submissions)
+    return stored
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +318,11 @@ async def _recompute_daily_activity(handle_id: uuid.UUID, session: AsyncSession)
 
 
 async def _recompute_tag_stats(handle_id: uuid.UUID, session: AsyncSession) -> None:
+    # Clear first (parity with _recompute_daily_activity) so tags that no longer have
+    # any submissions can't linger and feed stale weakness signals / recommendations.
+    await session.execute(
+        delete(TagStats).where(TagStats.user_handle_id == handle_id)
+    )
     await session.execute(
         text("""
             INSERT INTO tag_stats (user_handle_id, tag, solved_count, attempt_count, acceptance_rate, last_activity_at)
