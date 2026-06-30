@@ -198,6 +198,10 @@ export default function HandlesPage() {
   const [handleInput, setHandleInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  // Transient confirm error (gateway timeout / 5xx / network) — distinct from a real
+  // token mismatch. We keep the user on the Verify step with their token intact instead
+  // of wrongly telling them "no attempts remaining."
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Determine countdown target based on state
@@ -240,7 +244,23 @@ export default function HandlesPage() {
           }
         }
 
-        // Unverified, not locked → fresh start
+        // Unverified, not locked, but a token is still alive → resume the Verify step
+        // with the SAME token (survives refresh, no new token minted).
+        if (cf.verification_token && cf.verification_token_expires_at) {
+          const tokenExpiry = new Date(cf.verification_token_expires_at);
+          if (tokenExpiry > new Date()) {
+            setState({
+              status: "PENDING",
+              handleId: cf.id,
+              handle: cf.handle,
+              token: cf.verification_token,
+              expiresAt: tokenExpiry,
+            });
+            return;
+          }
+        }
+
+        // Unverified, no live token → fresh start
         setState({ status: "NO_HANDLE" });
       })
       .catch(() => setState({ status: "NO_HANDLE" }));
@@ -287,6 +307,7 @@ export default function HandlesPage() {
   async function handleConfirm() {
     if (!authToken || (state.status !== "PENDING" && state.status !== "FAILED")) return;
     setSubmitting(true);
+    setConfirmError(null);
     try {
       const data = await confirmVerification(authToken, state.handleId);
       setState({
@@ -302,7 +323,7 @@ export default function HandlesPage() {
           return;
         }
         if (err.status === 423) {
-          const lockoutMs = Date.now() + 60 * 60 * 1000;
+          const lockoutMs = Date.now() + 15 * 60 * 1000;
           setState({
             status: "LOCKED",
             handleId: state.handleId,
@@ -311,15 +332,23 @@ export default function HandlesPage() {
           });
           return;
         }
-        setState({
-          status: "FAILED",
-          handleId: state.handleId,
-          handle: state.handle,
-          token: state.token,
-          expiresAt: state.expiresAt,
-          attemptsRemaining: err.attemptsRemaining ?? 0,
-        });
+        // Only a real 400 mismatch decrements the attempt budget. Anything else
+        // (timeout, 5xx) is transient — keep the token and let the user retry freely.
+        if (err.status === 400) {
+          setState({
+            status: "FAILED",
+            handleId: state.handleId,
+            handle: state.handle,
+            token: state.token,
+            expiresAt: state.expiresAt,
+            attemptsRemaining: err.attemptsRemaining ?? 0,
+          });
+          return;
+        }
       }
+      setConfirmError(
+        "Couldn't reach Codeforces just now — your token is still valid. Wait a moment and verify again.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -354,6 +383,7 @@ export default function HandlesPage() {
   }
 
   function startOver() {
+    setConfirmError(null);
     setHandleInput(
       state.status === "PENDING" || state.status === "FAILED" ? state.handle : "",
     );
@@ -575,7 +605,7 @@ export default function HandlesPage() {
                     exit={{ opacity: 0, x: -16 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <div className="mb-5">
+                    <div className="mb-4">
                       <h2 className="text-lg font-semibold text-text-primary mb-1">
                         Paste this token into your CF profile
                       </h2>
@@ -589,10 +619,35 @@ export default function HandlesPage() {
                         >
                           codeforces.com/settings/social
                           <ExternalLink className="w-3 h-3" />
-                        </a>{" "}
-                        and paste it in the <span className="text-text-primary font-medium">Organization</span> field.
+                        </a>
+                        , paste the token below into the{" "}
+                        <span className="text-text-primary font-medium">Organization</span> field, and
+                        click <span className="text-text-primary font-medium">Save changes</span>.
                       </p>
                     </div>
+
+                    {/* Which account is being verified — confirm it's the right one */}
+                    {state.status !== "LOCKED" && (
+                      <div className="flex items-center justify-between gap-2 mb-4 px-3 py-2 bg-bg-base rounded-lg border border-border-subtle">
+                        <span className="text-xs text-text-muted">
+                          Verifying account{" "}
+                          <a
+                            href={`https://codeforces.com/profile/${state.handle}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono font-medium text-text-secondary hover:text-primary-300 transition-colors"
+                          >
+                            {state.handle}
+                          </a>
+                        </span>
+                        <button
+                          onClick={startOver}
+                          className="text-[11px] text-text-disabled hover:text-text-secondary transition-colors shrink-0"
+                        >
+                          Wrong handle?
+                        </button>
+                      </div>
+                    )}
 
                     {/* "Open new tab" hint */}
                     <div className="flex items-center gap-2 mb-4 text-xs text-warning-400">
@@ -655,15 +710,29 @@ export default function HandlesPage() {
                         <AlertCircle className="w-4 h-4 text-danger-400 shrink-0 mt-0.5" />
                         <div>
                           <p className="text-sm text-danger-400">
-                            Token not found in your CF Organization field.
+                            Still can&apos;t see the token in your Codeforces Organization field.
                           </p>
                           <p className="text-xs text-text-muted mt-0.5">
-                            Double-check and try again.{" "}
+                            Make sure you pasted it into the <span className="text-text-secondary">Organization</span>{" "}
+                            field and clicked <span className="text-text-secondary">Save changes</span> — Codeforces can
+                            take a minute to update. Then verify again.{" "}
                             {state.attemptsRemaining > 0
                               ? `${state.attemptsRemaining} attempt${state.attemptsRemaining !== 1 ? "s" : ""} remaining.`
                               : "No attempts remaining."}
                           </p>
                         </div>
+                      </motion.div>
+                    )}
+
+                    {/* Transient (non-mismatch) confirm error — token stays valid */}
+                    {confirmError && state.status !== "LOCKED" && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-start gap-2.5 p-3 bg-warning-500/8 border border-warning-500/20 rounded-xl mb-5"
+                      >
+                        <AlertCircle className="w-4 h-4 text-warning-400 shrink-0 mt-0.5" />
+                        <p className="text-sm text-warning-400">{confirmError}</p>
                       </motion.div>
                     )}
 
@@ -676,7 +745,10 @@ export default function HandlesPage() {
                           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                         >
                           {submitting ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              Checking Codeforces… this can take a few seconds
+                            </>
                           ) : (
                             <>
                               <Shield className="w-4 h-4" />

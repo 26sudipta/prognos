@@ -13,6 +13,8 @@ export interface HandleData {
   verified_at: string | null;
   last_synced_at: string | null;
   lockout_expires_at: string | null;
+  verification_token: string | null;
+  verification_token_expires_at: string | null;
 }
 
 export interface InitiateData {
