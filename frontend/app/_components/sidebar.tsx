@@ -26,7 +26,7 @@ const NAV_ITEMS = [
   { href: "/classrooms", label: "Classrooms", icon: GraduationCap },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const pathname = usePathname();
   const { user, token, logout } = useAuth();
   const router = useRouter();
@@ -34,12 +34,14 @@ export function Sidebar() {
   const [syncNote, setSyncNote] = useState<string | null>(null);
 
   async function handleLogout() {
+    onNavigate?.();
     await logout();
     router.replace("/login");
   }
 
   async function handleSyncNow() {
     if (!token || syncing) return;
+    onNavigate?.();
     setSyncing(true);
     setSyncNote(null);
     try {
@@ -87,6 +89,7 @@ export function Sidebar() {
             <Link
               key={href}
               href={href}
+              onClick={onNavigate}
               className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${
                 active
                   ? "bg-primary-500/10 text-primary-400"
@@ -117,6 +120,7 @@ export function Sidebar() {
 
         <Link
           href="/settings"
+          onClick={onNavigate}
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary transition-colors duration-150"
         >
           <Settings className="w-4 h-4 shrink-0" />

@@ -81,10 +81,10 @@ function HeroStrip({ contest }: { contest: ContestItem }) {
         background: `linear-gradient(135deg, ${heroTint} 0%, transparent 60%), var(--bg-surface)`,
       }}
     >
-      {/* Body: arc panel + divider + info panel */}
-      <div className="flex items-stretch">
+      {/* Body: arc panel + divider + info panel — stacks vertically on mobile */}
+      <div className="flex flex-col sm:flex-row items-stretch">
         {/* Arc countdown panel */}
-        <div className="w-64 shrink-0 flex items-center justify-center py-8 px-6">
+        <div className="w-full sm:w-64 shrink-0 flex items-center justify-center pt-8 pb-4 sm:py-8 px-6">
           <ArcCountdownPanel
             days={days}
             hours={hours}
@@ -98,14 +98,14 @@ function HeroStrip({ contest }: { contest: ContestItem }) {
           />
         </div>
 
-        {/* Vertical divider */}
+        {/* Divider — horizontal on mobile, vertical on sm+ */}
         <div
-          className="w-px shrink-0 my-6"
+          className="h-px w-auto mx-6 sm:h-auto sm:w-px sm:my-6 sm:mx-0 shrink-0"
           style={{ backgroundColor: "var(--border-subtle)" }}
         />
 
         {/* Info panel */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-5 px-8 py-8">
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-4 sm:gap-5 px-6 sm:px-8 py-6 sm:py-8">
           {/* Status label */}
           <div>
             {isLive ? (
@@ -123,7 +123,7 @@ function HeroStrip({ contest }: { contest: ContestItem }) {
           {/* Contest identity */}
           <div className="space-y-1.5 min-w-0">
             <h2
-              className="text-2xl font-bold text-text-primary leading-tight"
+              className="text-xl sm:text-2xl font-bold text-text-primary leading-tight break-words"
               title={contest.name}
             >
               {contest.name}
@@ -283,8 +283,8 @@ function ArcCountdownPanel({
 export function NextContestHeroSkeleton() {
   return (
     <div className="bg-bg-surface border border-border-default rounded-2xl overflow-hidden">
-      <div className="flex items-stretch">
-        <div className="w-64 shrink-0 flex items-center justify-center py-8 px-6">
+      <div className="flex flex-col sm:flex-row items-stretch">
+        <div className="w-full sm:w-64 shrink-0 flex items-center justify-center pt-8 pb-4 sm:py-8 px-6">
           <div className="relative w-[160px] h-[160px]">
             <svg width="160" height="160" viewBox="0 0 160 160" aria-hidden="true">
               <circle
@@ -301,8 +301,8 @@ export function NextContestHeroSkeleton() {
             </div>
           </div>
         </div>
-        <div className="w-px shrink-0 my-6" style={{ backgroundColor: "var(--border-subtle)" }} />
-        <div className="flex-1 flex flex-col justify-center gap-5 px-8 py-8">
+        <div className="h-px w-auto mx-6 sm:h-auto sm:w-px sm:my-6 sm:mx-0 shrink-0" style={{ backgroundColor: "var(--border-subtle)" }} />
+        <div className="flex-1 flex flex-col justify-center gap-4 sm:gap-5 px-6 sm:px-8 py-6 sm:py-8">
           <div className="skeleton h-3 w-16 rounded" />
           <div className="space-y-2">
             <div className="skeleton h-8 w-3/4 rounded" />

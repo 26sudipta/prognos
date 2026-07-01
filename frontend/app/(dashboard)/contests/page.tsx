@@ -92,8 +92,8 @@ export default function ContestsPage() {
       {/* Stale data warning */}
       <StaleDataBanner isStale={isStale} />
 
-      {/* Filter chips + view toggle */}
-      <div className="flex items-start gap-4">
+      {/* Filter chips + view toggle — toggle on top (right) on mobile, inline on sm+ */}
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-start sm:gap-4">
         <div className="flex-1 min-w-0">
           <PlatformFilterChips
             platforms={platforms ?? []}
@@ -102,7 +102,9 @@ export default function ContestsPage() {
             loading={platforms === undefined}
           />
         </div>
-        <ViewToggle view={view} onChange={handleViewChange} />
+        <div className="self-end sm:self-auto">
+          <ViewToggle view={view} onChange={handleViewChange} />
+        </div>
       </div>
 
       {/* Content */}

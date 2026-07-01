@@ -142,8 +142,10 @@ export function ActivityHeatmap({ data }: Props) {
         </div>
       </div>
 
-      <div className="flex justify-center">
-      <div ref={containerRef} className="relative overflow-visible">
+      {/* The 52-week grid (~884px) only fits at xl+ — there it's centered with full hover
+          tooltips; below that (mobile, tablet, small laptop) it scrolls horizontally. */}
+      <div className="overflow-x-auto xl:overflow-visible xl:flex xl:justify-center">
+      <div ref={containerRef} className="relative overflow-visible w-max mx-auto">
         {/* Month labels — absolutely positioned so "Jan", "Feb" etc. are never truncated */}
         <div className="relative h-4 mb-0.5" style={{ paddingLeft: DAY_COL_WIDTH }}>
           {labels.map(({ col, label }) => (

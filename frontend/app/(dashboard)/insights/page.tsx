@@ -126,7 +126,7 @@ export default function InsightsPage() {
   const statsLoading = weaknesses === undefined || tags === undefined;
 
   return (
-    <div className="h-full flex flex-col gap-4 max-w-[1400px] mx-auto">
+    <div className="md:h-full flex flex-col gap-4 max-w-[1400px] mx-auto">
       {/* Sync banner */}
       {dashboard && dashboard.is_syncing && (
         <div className="flex items-center gap-3 px-4 py-3 bg-primary-500/10 border border-primary-500/25 rounded-xl text-sm text-primary-300 shrink-0">
@@ -140,7 +140,7 @@ export default function InsightsPage() {
 
       {/* Weak stats strip */}
       {statsLoading ? (
-        <div className="grid grid-cols-4 gap-4 shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 shrink-0">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="bg-bg-surface border border-border-subtle rounded-xl px-5 py-4">
               <div className="skeleton h-2.5 w-20 mb-3" />
@@ -150,7 +150,7 @@ export default function InsightsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-4 gap-4 shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 shrink-0">
           <StatCard
             label="Focus Areas"
             value={totalFocusAreas ?? 0}
@@ -179,8 +179,8 @@ export default function InsightsPage() {
       )}
 
       {/* Bottom: Focus Areas | Recommendations — fills remaining height */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
-        <div className="h-full min-h-0">
+      <div className="md:flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 md:min-h-0">
+        <div className="md:h-full md:min-h-0">
           {weaknesses === undefined ? (
             <WeaknessCardsSkeleton />
           ) : (
@@ -190,7 +190,7 @@ export default function InsightsPage() {
             />
           )}
         </div>
-        <div className="h-full min-h-0">
+        <div className="md:h-full md:min-h-0">
           {recs === undefined ? (
             <RecommendationsSkeleton />
           ) : (

@@ -30,7 +30,7 @@ interface Props {
 export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
   if (data === null) {
     return (
-      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col items-center justify-center text-center gap-4 min-h-[300px]">
+      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 md:h-full flex flex-col items-center justify-center text-center gap-4 min-h-[300px]">
         <div className="flex items-center justify-center w-12 h-12 rounded-full bg-bg-surface-raised border border-border-default">
           <RefreshCw className="w-5 h-5 text-text-muted" />
         </div>
@@ -53,7 +53,7 @@ export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
   const { recommendations, generated_at } = data;
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 md:h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
           Recommended Problems
@@ -76,7 +76,7 @@ export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
         </div>
       </div>
 
-      <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
+      <div className="space-y-2 md:flex-1 md:min-h-0 md:overflow-y-auto pr-1">
         {recommendations.map((rec) => {
           const dc = difficultyColor(rec.difficulty);
           const badge = positionBadgeStyle(rec.position);
@@ -127,7 +127,7 @@ export function Recommendations({ data, onRefresh, isRefreshing }: Props) {
 
 export function RecommendationsSkeleton() {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 md:h-full">
       <div className="flex justify-between mb-4">
         <div className="skeleton h-3 w-40" />
         <div className="skeleton h-3 w-12" />

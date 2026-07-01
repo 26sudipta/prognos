@@ -77,6 +77,9 @@ export function ContestCalendarView({
         </div>
       </div>
 
+      {/* Calendar grid — scrolls horizontally on narrow screens so days stay legible */}
+      <div className="overflow-x-auto">
+      <div className="min-w-[600px]">
       {/* Day name headers */}
       <div className="grid grid-cols-7 border-b border-border-subtle">
         {weekDays.map((day, i) => {
@@ -122,6 +125,8 @@ export function ContestCalendarView({
             />
           );
         })}
+      </div>
+      </div>
       </div>
     </div>
   );

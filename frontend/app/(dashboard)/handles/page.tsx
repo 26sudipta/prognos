@@ -452,7 +452,7 @@ export default function HandlesPage() {
   const step = currentStep(state);
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-2xl mx-auto">
       {/* Page header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-text-primary">Handles</h1>
@@ -461,7 +461,7 @@ export default function HandlesPage() {
         </p>
       </div>
 
-      <div className="max-w-[480px]">
+      <div className="w-full">
         <AnimatePresence mode="wait">
           {/* ── LOADING ─────────────────────────────────────────────────── */}
           {state.status === "LOADING" && (

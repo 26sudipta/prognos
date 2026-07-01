@@ -37,7 +37,7 @@ interface Props {
 export function WeaknessCards({ data, recTags = [] }: Props) {
   if (data.length === 0) {
     return (
-      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex items-center justify-center min-h-[300px]">
+      <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 md:h-full flex items-center justify-center min-h-[300px]">
         <p className="text-sm text-text-muted">No focus areas detected yet.</p>
       </div>
     );
@@ -51,7 +51,7 @@ export function WeaknessCards({ data, recTags = [] }: Props) {
   });
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 h-full flex flex-col">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 md:h-full flex flex-col">
       <div className="flex items-baseline justify-between mb-4">
         <h2 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
           Focus Areas
@@ -59,7 +59,7 @@ export function WeaknessCards({ data, recTags = [] }: Props) {
         <span className="text-[10px] text-text-disabled">analyzed {analyzedLabel}</span>
       </div>
 
-      <div className="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
+      <div className="space-y-2.5 md:flex-1 md:min-h-0 md:overflow-y-auto pr-1">
         {data.map((s) => {
           const cfg = SIGNAL_CFG[s.signal_type];
           const recCount = recTags.filter((t) => t === s.tag).length;
@@ -110,7 +110,7 @@ export function WeaknessCards({ data, recTags = [] }: Props) {
 
 export function WeaknessCardsSkeleton() {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 md:h-full">
       <div className="flex justify-between mb-4">
         <div className="skeleton h-3 w-24" />
         <div className="skeleton h-3 w-20" />
