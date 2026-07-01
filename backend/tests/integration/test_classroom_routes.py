@@ -407,10 +407,13 @@ async def test_leave_classroom_owner_raises_400(db_session: AsyncSession, classr
 # ── Leaderboard ───────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_leaderboard_empty_before_rebuild(db_session: AsyncSession, classroom, teacher_user: User):
+async def test_leaderboard_lazily_rebuilds_on_read(db_session: AsyncSession, classroom, teacher_user: User):
+    # Worker-free deployment: nothing rebuilds the cache in the background, so the first
+    # read must rebuild it inline and include the verified teacher.
     result = await get_leaderboard(db_session, classroom.id, teacher_user.id)
-    assert result.entries == []
-    assert result.computed_at is None
+    assert len(result.entries) == 1
+    assert result.entries[0].is_me is True
+    assert result.computed_at is not None
     assert result.classroom_name == "Test Classroom"
 
 
@@ -429,6 +432,7 @@ async def test_leaderboard_returns_entries_after_upsert(
         current_streak=10,
         longest_streak=50,
         days_active_30d=25,
+        computed_at=datetime.now(UTC),  # fresh → read serves cache instead of rebuilding
     )
     db_session.add(row)
     await db_session.commit()
@@ -454,13 +458,15 @@ async def test_cohort_student_raises_403(
 
 
 @pytest.mark.asyncio
-async def test_cohort_empty_leaderboard(db_session: AsyncSession, classroom, teacher_user: User):
+async def test_cohort_no_activity(db_session: AsyncSession, classroom, teacher_user: User):
+    # Cohort rebuilds the leaderboard on read, so the verified teacher appears — but with
+    # no synced activity there's no rating, no weak tags, and 0 active days.
     result = await get_cohort_analytics(db_session, classroom.id, teacher_user.id)
-    # member_count is actual membership count (1 = teacher), not leaderboard cache rows
     assert result.member_count == 1
     assert result.class_average_rating is None
     assert result.most_neglected_tags == []
-    assert result.student_attendance == []
+    assert len(result.student_attendance) == 1
+    assert result.student_attendance[0].days_active_30d == 0
 
 
 @pytest.mark.asyncio
@@ -481,6 +487,7 @@ async def test_cohort_aggregates_weak_tags(db_session: AsyncSession, classroom, 
             longest_streak=20,
             days_active_30d=10,
             weak_tags=[{"tag": "dp", "signal_type": "neglected", "score": 15.0}],
+            computed_at=datetime.now(UTC),  # fresh → cohort serves cache, no rebuild
         )
         db_session.add(row)
     await db_session.commit()

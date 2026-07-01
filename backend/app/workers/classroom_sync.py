@@ -73,56 +73,63 @@ async def _enqueue_all_classrooms() -> None:
         rebuild_classroom_leaderboard.delay(str(cid))
 
 
+async def rebuild_leaderboard(session: AsyncSession, classroom_id: uuid.UUID) -> int:
+    """Rebuild the leaderboard cache for one classroom using the given session.
+
+    DB-only (reads pre-computed derived tables), so it's cheap enough to run inline on
+    the read path when the cache is empty/stale — which is how the worker-free (free-tier)
+    deployment keeps leaderboards populated without a Celery broker.
+    """
+    result = await session.execute(
+        select(ClassroomMembership).where(
+            ClassroomMembership.classroom_id == classroom_id
+        )
+    )
+    memberships = result.scalars().all()
+    member_ids = [m.user_id for m in memberships]
+
+    if not member_ids:
+        return 0
+
+    # Remove stale leaderboard rows (members who left)
+    await session.execute(
+        delete(ClassroomLeaderboard).where(
+            ClassroomLeaderboard.classroom_id == classroom_id,
+            ClassroomLeaderboard.user_id.notin_(member_ids),
+        )
+    )
+
+    updated = 0
+    for membership in memberships:
+        try:
+            row = await _build_leaderboard_row(session, classroom_id, membership.user_id)
+            if row is None:
+                continue  # no verified handle — preserve old row
+
+            await session.execute(
+                pg_insert(ClassroomLeaderboard)
+                .values(**row)
+                .on_conflict_do_update(
+                    constraint="uq_classroom_leaderboard",
+                    set_={k: v for k, v in row.items() if k not in ("classroom_id", "user_id")},
+                )
+            )
+            updated += 1
+        except Exception:
+            logger.exception(
+                "Failed to rebuild leaderboard row for user %s in classroom %s",
+                membership.user_id, classroom_id,
+            )
+
+    await session.commit()
+    return updated
+
+
 async def _rebuild_async(classroom_id: uuid.UUID) -> dict:
     engine = _make_async_engine()
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
     async with async_session() as session:
-        # Load all members
-        result = await session.execute(
-            select(ClassroomMembership).where(
-                ClassroomMembership.classroom_id == classroom_id
-            )
-        )
-        memberships = result.scalars().all()
-        member_ids = [m.user_id for m in memberships]
-
-        if not member_ids:
-            await engine.dispose()
-            return {"classroom_id": str(classroom_id), "updated": 0}
-
-        # Remove stale leaderboard rows (members who left)
-        await session.execute(
-            delete(ClassroomLeaderboard).where(
-                ClassroomLeaderboard.classroom_id == classroom_id,
-                ClassroomLeaderboard.user_id.notin_(member_ids),
-            )
-        )
-
-        updated = 0
-        for membership in memberships:
-            try:
-                row = await _build_leaderboard_row(session, classroom_id, membership.user_id)
-                if row is None:
-                    continue  # no verified handle — preserve old row
-
-                await session.execute(
-                    pg_insert(ClassroomLeaderboard)
-                    .values(**row)
-                    .on_conflict_do_update(
-                        constraint="uq_classroom_leaderboard",
-                        set_={k: v for k, v in row.items() if k not in ("classroom_id", "user_id")},
-                    )
-                )
-                updated += 1
-            except Exception:
-                logger.exception(
-                    "Failed to rebuild leaderboard row for user %s in classroom %s",
-                    membership.user_id, classroom_id,
-                )
-
-        await session.commit()
-
+        updated = await rebuild_leaderboard(session, classroom_id)
     await engine.dispose()
     return {"classroom_id": str(classroom_id), "updated": updated}
 

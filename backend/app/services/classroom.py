@@ -1,3 +1,4 @@
+import logging
 import secrets
 import uuid
 from collections import Counter
@@ -451,12 +452,13 @@ async def leave_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: uu
 
 # ── Leaderboard ───────────────────────────────────────────────────────────────
 
-async def get_leaderboard(
-    db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID
-) -> LeaderboardResponse:
-    classroom = await _get_classroom_or_404(db, classroom_id)
-    await _assert_member(db, classroom_id, user_id)
+logger = logging.getLogger(__name__)
 
+# How long a cached leaderboard is served before a read triggers an inline rebuild.
+LEADERBOARD_TTL = timedelta(minutes=10)
+
+
+async def _fetch_leaderboard_rows(db: AsyncSession, classroom_id: uuid.UUID):
     result = await db.execute(
         select(ClassroomLeaderboard)
         .where(ClassroomLeaderboard.classroom_id == classroom_id)
@@ -465,7 +467,36 @@ async def get_leaderboard(
             ClassroomLeaderboard.solved_count.desc(),
         )
     )
-    rows = result.scalars().all()
+    return result.scalars().all()
+
+
+async def _ensure_leaderboard(db: AsyncSession, classroom_id: uuid.UUID, member_count: int):
+    """Return leaderboard rows, rebuilding the cache inline when it's empty or stale.
+
+    The worker-free (free-tier) deployment has no broker, so nothing rebuilds the cache in
+    the background. Building it on read keeps it populated and fresh. DB-only → stays fast.
+    """
+    rows = await _fetch_leaderboard_rows(db, classroom_id)
+    newest = rows[0].computed_at if rows else None
+    is_stale = newest is None or (datetime.now(UTC) - newest) > LEADERBOARD_TTL
+    if member_count > 0 and is_stale:
+        from app.workers.classroom_sync import rebuild_leaderboard
+        try:
+            await rebuild_leaderboard(db, classroom_id)
+            rows = await _fetch_leaderboard_rows(db, classroom_id)
+        except Exception:
+            logger.exception("inline leaderboard rebuild failed for %s", classroom_id)
+    return rows
+
+
+async def get_leaderboard(
+    db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID
+) -> LeaderboardResponse:
+    classroom = await _get_classroom_or_404(db, classroom_id)
+    await _assert_member(db, classroom_id, user_id)
+
+    member_count = await _member_count(db, classroom_id)
+    rows = await _ensure_leaderboard(db, classroom_id, member_count)
 
     entries = []
     for rank, row in enumerate(rows, start=1):
@@ -488,7 +519,6 @@ async def get_leaderboard(
         ))
 
     computed_at = rows[0].computed_at if rows else None
-    member_count = await _member_count(db, classroom_id)
 
     return LeaderboardResponse(
         classroom_id=classroom.id,
@@ -507,10 +537,10 @@ async def get_cohort_analytics(
     classroom = await _get_classroom_or_404(db, classroom_id)
     await _assert_teacher(db, classroom_id, user_id)
 
-    result = await db.execute(
-        select(ClassroomLeaderboard).where(ClassroomLeaderboard.classroom_id == classroom_id)
-    )
-    entries = result.scalars().all()
+    # Cohort stats derive from the leaderboard cache — build/refresh it on read too, so
+    # the teacher's analytics panel isn't empty on the worker-free deployment.
+    member_count = await _member_count(db, classroom_id)
+    entries = await _ensure_leaderboard(db, classroom_id, member_count)
 
     ratings = [e.cf_rating for e in entries if e.cf_rating is not None]
     class_average_rating: float | None = mean(ratings) if ratings else None
@@ -545,11 +575,10 @@ async def get_cohort_analytics(
         reverse=True,
     )
 
-    actual_member_count = await _member_count(db, classroom_id)
     return CohortAnalytics(
         classroom_id=classroom.id,
         classroom_name=classroom.name,
-        member_count=actual_member_count,
+        member_count=member_count,
         class_average_rating=class_average_rating,
         most_neglected_tags=most_neglected,
         lowest_success_tags=lowest_success,
