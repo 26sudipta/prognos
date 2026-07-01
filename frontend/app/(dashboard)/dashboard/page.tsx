@@ -80,7 +80,14 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!token) return;
     loadAll(token);
-    return stopPoll;
+    // Re-load when a sync is triggered from elsewhere (e.g. the sidebar "Sync now"),
+    // so the dashboard picks up the in-progress sync and its banner/poll take over.
+    const onSync = () => loadAll(token);
+    window.addEventListener("prognos:sync-started", onSync);
+    return () => {
+      stopPoll();
+      window.removeEventListener("prognos:sync-started", onSync);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 

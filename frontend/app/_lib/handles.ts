@@ -35,11 +35,13 @@ export interface VerifiedData {
 export class ApiError extends Error {
   status: number;
   attemptsRemaining?: number;
+  retryAfterSeconds?: number;
 
-  constructor(message: string, status: number, attemptsRemaining?: number) {
+  constructor(message: string, status: number, attemptsRemaining?: number, retryAfterSeconds?: number) {
     super(message);
     this.status = status;
     this.attemptsRemaining = attemptsRemaining;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -105,6 +107,12 @@ export async function syncHandle(token: string, handleId: string): Promise<void>
     method: "POST",
     token,
   });
-  // 429 = cooldown active, treat as ok (sync already running or recently ran)
-  if (!res.ok && res.status !== 429) throw new ApiError("Failed to start sync", res.status);
+  if (res.ok) return;
+  if (res.status === 429) {
+    // Cooldown active — surface the retry window so callers can inform the user.
+    const body = await res.json().catch(() => ({}));
+    const retry = body?.detail?.retry_after_seconds;
+    throw new ApiError("Sync cooldown active", 429, undefined, typeof retry === "number" ? retry : undefined);
+  }
+  throw new ApiError("Failed to start sync", res.status);
 }

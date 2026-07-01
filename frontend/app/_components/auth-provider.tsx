@@ -24,6 +24,7 @@ interface AuthState {
   login: (token: string) => void;
   logout: () => Promise<void>;
   setToken: (token: string) => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -62,6 +63,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, [token]);
 
+  const refreshUser = useCallback(async () => {
+    if (token) await fetchUser(token);
+  }, [token, fetchUser]);
+
   // On mount: try to restore session via refresh cookie
   useEffect(() => {
     async function restore() {
@@ -86,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUser]);
 
   return (
-    <AuthContext.Provider value={{ token, user, isLoading, login, logout, setToken }}>
+    <AuthContext.Provider value={{ token, user, isLoading, login, logout, setToken, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

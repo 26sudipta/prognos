@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -11,9 +12,11 @@ import {
   Settings,
   TrendingUp,
   LogOut,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useRouter } from "next/navigation";
+import { ApiError, fetchHandles, syncHandle } from "@/app/_lib/handles";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -25,12 +28,45 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const router = useRouter();
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
   async function handleLogout() {
     await logout();
     router.replace("/login");
+  }
+
+  async function handleSyncNow() {
+    if (!token || syncing) return;
+    setSyncing(true);
+    setSyncNote(null);
+    try {
+      const handles = await fetchHandles(token);
+      const cf = handles.find((h) => h.platform === "codeforces" && h.is_verified);
+      if (!cf) {
+        setSyncNote("Verify a handle first");
+        router.push("/handles");
+        return;
+      }
+      await syncHandle(token, cf.id);
+      // Give the background sync a moment to flag itself, then let the dashboard pick it
+      // up (it shows the sync banner and auto-refreshes when done).
+      await new Promise((r) => setTimeout(r, 1500));
+      window.dispatchEvent(new Event("prognos:sync-started"));
+      router.push("/dashboard");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        const mins = Math.max(1, Math.ceil((err.retryAfterSeconds ?? 0) / 60));
+        setSyncNote(`Synced recently — try again in ${mins}m`);
+      } else {
+        setSyncNote("Couldn't start sync — try again");
+      }
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncNote(null), 5000);
+    }
   }
 
   return (
@@ -64,8 +100,21 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom: settings + user */}
+      {/* Bottom: sync + settings + user */}
       <div className="px-3 pb-4 border-t border-border-subtle pt-3 space-y-0.5">
+        <button
+          onClick={handleSyncNow}
+          disabled={syncing}
+          title="Fetch your latest Codeforces submissions"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary transition-colors duration-150 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className={`w-4 h-4 shrink-0 ${syncing ? "animate-spin text-primary-400" : ""}`} />
+          {syncing ? "Syncing…" : "Sync now"}
+        </button>
+        {syncNote && (
+          <p className="px-3 pb-1 text-[11px] text-text-muted leading-snug">{syncNote}</p>
+        )}
+
         <Link
           href="/settings"
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary transition-colors duration-150"

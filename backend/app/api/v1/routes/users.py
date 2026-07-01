@@ -33,6 +33,6 @@ async def delete_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    # TODO (Phase 4): block deletion if user owns active classrooms → 409 Conflict
+    # soft_delete_user raises 409 if the user still owns active classrooms.
     await soft_delete_user(db, str(current_user.id))
     response.delete_cookie(key="refresh_token", path=_REFRESH_COOKIE_PATH)
