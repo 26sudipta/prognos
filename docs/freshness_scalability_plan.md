@@ -1,5 +1,7 @@
 # PROGNOS — Data Freshness & Scalability Master Plan
-**Status:** Reference / Future — not scheduled for implementation. A north-star design doc.
+**Status:** SUPERSEDED by `architecture_endgame.md` — the endgame doc incorporates the tier
+model below and adds cloud migration, SLOs, the 100k-active budget math, reliability/DR,
+observability, cost, and the M0–M5 roadmap. This file remains as the original tier reasoning.
 **Author intent:** written as a staff/principal-level system design so future-self (or any
 engineer) can execute it incrementally without re-deriving the reasoning.
 

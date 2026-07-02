@@ -5,6 +5,26 @@
 
 ---
 
+## Deliverable — CSE-3644 OBE Project Report [DONE]
+- Full industry-style engineering report: **80 pages, 25 figures, 38 tables**, 18 sections +
+  6 appendices, mapping PROGNOS onto the OBE/BAETE framework (CLO1–7, PLO2–7, EP1/2/4/6/7,
+  Bloom's C4–C6/A4) and covering the whole project past/present/future.
+- Generated via `docs/report/build_report.py` (python-docx) + `docs/report/diagrams.py`
+  (matplotlib, 25 figures) + `measure_toc.py` (two-pass: static TOC + List of Figures + List of
+  Tables, all page numbers verified). Output: `docs/report/PROGNOS_Project_Report.docx` (80 pages)
+  + verification PDF. Driven by `docs/report/REPORT_GENERATION_PROMPT.md`.
+- All empirical claims are real: **127 tests passing** (pytest), **load test** via real
+  `ab -n 2000 -c 20` on a local instance (~2,020 req/s, 0 failed, p95 11 ms). Capacity chapter
+  derives user limits with shown arithmetic. No fabricated studies/numbers.
+- Honest status framing: Android app = approved **design** (Kotlin/Compose, on-device reminders),
+  AI layer = **roadmap**; web platform/tests/deployment stated as delivered. Survey (n=20)
+  labelled indicative.
+- Human voice verified: 19 em dashes across 14.4k words, zero banned buzzwords. Cover carries the
+  official IIUC crest. Team should sanity-check the §3 survey figures before submitting.
+  See `docs/phase_report.md`.
+
+---
+
 ## Phase 1 — Foundation & Auth
 
 ### 1.1 Project Scaffolding [DONE]
@@ -685,6 +705,62 @@ without the secret.
   default `localhost` after login, stale Vercel build — all in `docs/deployment_execution.md`.
 - **cron-job.org [DONE]:** keep-warm `GET /health` 10m, `POST /cron/sync-contests` 4h,
   `POST /cron/sync-handles` 6h (with `X-Cron-Secret`) — all verified working. **Deployment complete.**
+
+## Phase 5.2 — On-Demand Sync (Sync-on-View + Classroom Sync) [DONE]
+**Completed:** 2026-07-02. Full write-up: `docs/phase_5_2.md`.
+
+**Files created/modified:**
+- `backend/app/workers/enqueue.py` — NEW: shared `enqueue_sync()` (extracted from `handles.py`) so
+  handle-verify, sync-on-view, and classroom sync share one Celery-else-BackgroundTasks policy
+- `backend/app/services/analytics.py` — `get_dashboard()` gains optional `background_tasks`;
+  sync-on-view enqueues a refresh for handles stale >5 min (`SYNC_ON_VIEW_STALE_AFTER`), keyed off
+  `last_synced_at` (never `last_manual_sync_at`)
+- `backend/app/api/v1/routes/analytics.py` — dashboard route injects `BackgroundTasks`
+- `backend/app/services/classroom.py` — NEW `sync_classroom()` (member-guarded, 15-min per-classroom
+  cooldown, enqueues per-member in leaderboard order); `_classroom_syncing()` + `syncing` in
+  `get_leaderboard`
+- `backend/app/api/v1/routes/classrooms.py` — NEW `POST /{classroom_id}/sync` (202)
+- `backend/app/models/classroom.py` — `Classroom.last_bulk_sync_at`
+- `backend/app/schemas/classroom.py` — `ClassroomSyncResponse` + `LeaderboardResponse.syncing`
+- `backend/alembic/versions/008_classroom_last_bulk_sync.py` — NEW migration (007 → 008)
+- `frontend/app/_lib/classrooms.ts` — `syncClassroom()`, `ClassroomSyncResponse`, `syncing` field
+- `frontend/app/(dashboard)/classrooms/[id]/page.tsx` — Sync button (all members), poll-while-syncing,
+  cooldown banner
+- Tests: +4 classroom (order, cooldown 429, non-member 403, syncing flag), +2 analytics (sync-on-view
+  stale/fresh)
+
+**Technical decisions:**
+- **Client triggers, server fetches** — clients never send CF data, only request a sync; the server
+  fetches authoritatively on its own IP, so a leaderboard can never carry forged data. Rejected
+  client-side CF fetch: submissions are append-only facts, so peer re-syncs can add real rows but
+  never erase injected fakes (and destructive-replace would enable deletion attacks).
+- Two independent sync clocks: sync-on-view uses `last_synced_at` (5 min); manual button uses
+  `last_manual_sync_at` (30 min) — they never fight.
+- Reused `_sync_handle_async`, `rebuild_leaderboard`, and the existing 5 s poll — no new infra.
+
+**Free-tier hardening (bugs found tracing the worker-free path):**
+- `_ensure_leaderboard` now rebuilds when a member's `last_synced_at` is newer than the board
+  ("behind" via `_max_member_sync`) — `_trigger_leaderboard_rebuilds` `.delay()` is a no-op without a
+  broker, so otherwise the board showed stale numbers for up to the 10-min TTL after a sync.
+- `_fetch_leaderboard_rows` uses `.execution_options(populate_existing=True)` — sessions are
+  `expire_on_commit=False`, so the inline rebuild's Core upsert was otherwise returned stale within
+  the same request (also fixed the pre-existing TTL path).
+- `sync_classroom` pre-marks enqueued handles `IN_PROGRESS` in the request txn so the immediate
+  leaderboard GET reports `syncing=true` and the poll starts (BackgroundTasks run after the response).
+- Frontend poll: preserves the last-good board on transient errors, caps at 5 consecutive failures.
+
+**Verification:** full backend suite green (+8 new tests this phase); `alembic upgrade head` 007→008;
+`npm run build` 0 TS/ESLint errors.
+
+## Endgame Architecture ("Max Plan") [DOC — reference]
+**Written:** 2026-07-02 — `docs/architecture_endgame.md`. The definitive scaling source of truth:
+two laws (reads scale with money; CF ingestion only with intelligence + client-assist +
+partnership), numeric SLOs, the 100k-active CF-budget math (~21.6k server syncs/day/IP → balanced
+cohort table), cloud reference stack (AWS default, GCP/Azure mapping, Terraform-portable),
+speed/freshness layers, reliability/security/observability, M0–M5 roadmap with exit criteria and
+cost envelopes, anti-goals. Supersedes `freshness_scalability_plan.md` (pointer added there).
+First executable slice when scaling begins: **M0** (paid Redis + Tier-0 token bucket + per-handle
+locks + Celery re-enabled).
 
 ## Phase 5 — Mobile Companion [TODO]
 ## Phase 6 — AI Layer [TODO]
