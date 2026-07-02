@@ -762,7 +762,21 @@ cost envelopes, anti-goals. Supersedes `freshness_scalability_plan.md` (pointer 
 First executable slice when scaling begins: **M0** (paid Redis + Tier-0 token bucket + per-handle
 locks + Celery re-enabled).
 
-## Phase 5 — Mobile App (Android + iOS) [PLANNED]
+## Phase 5 — Mobile App (Android + iOS) [IN_PROGRESS]
+
+### M0 — Foundation [DONE]
+**Completed:** 2026-07-02. Full write-up: `docs/phase_M0.md`.
+- Flutter 3.44.4 SDK installed user-local at `~/dev/flutter` (no sudo, removable).
+- `flutter create` project at `mobile/` (Android+iOS); deps: flutter_riverpod, dio, google_fonts,
+  intl, flutter_secure_storage.
+- Design system transcribes the web tokens exactly (`app_colors.dart`, `cf_rating.dart` ← from
+  `frontend/app/globals.css` + stat-strip ladder); Material 3 dark theme, Inter/JetBrains Mono.
+- Core wiring: `AppConfig` (API base via --dart-define), `dioProvider`, `secureStoreProvider`,
+  3-tab shell (Dashboard/Contests/Leaderboard placeholders), shimmer `Skeleton`.
+- **Verify:** `flutter analyze` clean; `flutter test` 3/3 pass. (APK/device run needs Android SDK
+  on the user's machine — see `mobile/README.md`.)
+
+
 **Plan finalized:** 2026-07-02 — `docs/mobile_implementation_plan.md` (supersedes the
 Android-only Kotlin plan; user widened scope to both platforms → **Flutter**, research-backed:
 RN's Notifee archived Apr 2026, `flutter_local_notifications` v22 active; market wide open —
