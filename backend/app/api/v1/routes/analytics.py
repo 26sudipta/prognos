@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
@@ -25,10 +25,11 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/dashboard", response_model=DashboardResponse)
 async def dashboard(
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DashboardResponse:
-    return await get_dashboard(db, current_user.id)
+    return await get_dashboard(db, current_user.id, background_tasks)
 
 
 @router.get("/tags", response_model=list[TagStatsResponse])

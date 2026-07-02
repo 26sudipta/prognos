@@ -1,6 +1,7 @@
 import uuid
-from datetime import UTC, date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
+from fastapi import BackgroundTasks
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,13 @@ from app.schemas.analytics import (
     TagStatsResponse,
     WeaknessSignalResponse,
 )
+from app.workers.enqueue import enqueue_sync
+
+# Sync-on-view: on dashboard load, if a handle's data is older than this, kick off a
+# background refresh so an active viewer sees near-fresh data without waiting for the
+# scheduled cron. Keyed off `last_synced_at` (not `last_manual_sync_at`) so it never
+# collides with the manual "Sync now" button's 30-min cooldown.
+SYNC_ON_VIEW_STALE_AFTER = timedelta(minutes=5)
 
 
 async def _get_handle_ids(db: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
@@ -59,7 +67,11 @@ def _compute_streaks(date_to_submissions: dict[date, int]) -> tuple[int, int]:
     return current, longest
 
 
-async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardResponse:
+async def get_dashboard(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    background_tasks: BackgroundTasks | None = None,
+) -> DashboardResponse:
     handle_ids = await _get_handle_ids(db, user_id)
 
     if not handle_ids:
@@ -73,18 +85,34 @@ async def get_dashboard(db: AsyncSession, user_id: uuid.UUID) -> DashboardRespon
             is_syncing=False,
         )
 
-    # Determine if any handle has never completed a sync or is currently syncing
-    sync_row = (
+    # Determine sync state per handle and, when `background_tasks` is available,
+    # trigger a server-side sync-on-view for handles that are stale or never synced.
+    sync_rows = (
         await db.execute(
-            select(UserHandle.sync_status, UserHandle.last_synced_at)
-            .where(UserHandle.id.in_(handle_ids))
-            .limit(1)
+            select(
+                UserHandle.id,
+                UserHandle.sync_status,
+                UserHandle.last_synced_at,
+            ).where(UserHandle.id.in_(handle_ids))
         )
-    ).first()
-    is_syncing = sync_row is not None and (
-        sync_row.sync_status == HandleSyncStatus.IN_PROGRESS
-        or sync_row.last_synced_at is None
-    )
+    ).all()
+
+    now = datetime.now(UTC)
+    is_syncing = False
+    for hid, sync_status, last_synced_at in sync_rows:
+        in_progress = sync_status == HandleSyncStatus.IN_PROGRESS
+        never_synced = last_synced_at is None
+        stale = last_synced_at is not None and now - last_synced_at > SYNC_ON_VIEW_STALE_AFTER
+
+        if in_progress or never_synced:
+            is_syncing = True
+
+        # Sync-on-view: enqueue an authoritative refresh for stale/never-synced handles
+        # that aren't already syncing. Setting is_syncing lets the frontend's existing
+        # 5s poll pick up the fresh data automatically.
+        if background_tasks is not None and not in_progress and (never_synced or stale):
+            enqueue_sync(hid, background_tasks)
+            is_syncing = True
 
     # Fetch all daily_activity rows across all handles (all time)
     rows = (

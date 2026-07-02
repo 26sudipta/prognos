@@ -313,3 +313,48 @@ async def test_rating_history_all_fields_present(db_session: AsyncSession, test_
     assert result[0].cf_contest_id == 1001
     assert result[0].new_rating == 1500
     assert result[2].delta == -50
+
+
+# ── Sync-on-view ────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_dashboard_sync_on_view_enqueues_when_stale(
+    db_session: AsyncSession, test_user, verified_handle, monkeypatch
+):
+    from fastapi import BackgroundTasks
+
+    verified_handle.last_synced_at = datetime.now(UTC) - timedelta(hours=1)
+    await db_session.commit()
+
+    enqueued: list = []
+    monkeypatch.setattr(
+        "app.services.analytics.enqueue_sync",
+        lambda hid, bt: enqueued.append(hid) or "task",
+    )
+
+    result = await get_dashboard(db_session, test_user.id, BackgroundTasks())
+    assert enqueued == [verified_handle.id]
+    assert result.is_syncing is True
+    # Sync-on-view must not consume the manual-button cooldown.
+    await db_session.refresh(verified_handle)
+    assert verified_handle.last_manual_sync_at is None
+
+
+@pytest.mark.asyncio
+async def test_dashboard_sync_on_view_skips_when_fresh(
+    db_session: AsyncSession, test_user, verified_handle, monkeypatch
+):
+    from fastapi import BackgroundTasks
+
+    verified_handle.last_synced_at = datetime.now(UTC) - timedelta(seconds=30)
+    await db_session.commit()
+
+    enqueued: list = []
+    monkeypatch.setattr(
+        "app.services.analytics.enqueue_sync",
+        lambda hid, bt: enqueued.append(hid) or "task",
+    )
+
+    result = await get_dashboard(db_session, test_user.id, BackgroundTasks())
+    assert enqueued == []
+    assert result.is_syncing is False

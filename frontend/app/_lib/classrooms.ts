@@ -69,6 +69,12 @@ export interface LeaderboardResponse {
   entries: LeaderboardEntry[];
   member_count: number;
   computed_at: string | null;
+  syncing: boolean;
+}
+
+export interface ClassroomSyncResponse {
+  classroom_id: string;
+  members_enqueued: number;
 }
 
 export interface CohortTag {
@@ -137,6 +143,20 @@ export async function deleteClassroom(token: string, id: string): Promise<void> 
 export async function fetchLeaderboard(token: string, id: string): Promise<LeaderboardResponse> {
   const res = await apiFetch(`/api/v1/classrooms/${id}/leaderboard`, { token });
   if (!res.ok) throw new Error("Failed to fetch leaderboard");
+  return res.json();
+}
+
+export async function syncClassroom(token: string, id: string): Promise<ClassroomSyncResponse> {
+  const res = await apiFetch(`/api/v1/classrooms/${id}/sync`, { token, method: "POST" });
+  if (res.status === 429) {
+    const body = await res.json().catch(() => ({}));
+    const secs = body?.detail?.retry_after_seconds;
+    const mins = secs ? Math.ceil(secs / 60) : null;
+    throw new Error(
+      mins ? `Recently synced — try again in ~${mins} min.` : "Recently synced — try again shortly.",
+    );
+  }
+  if (!res.ok) throw new Error("Failed to start classroom sync");
   return res.json();
 }
 

@@ -22,6 +22,7 @@ from app.services.handle import (
     list_handles,
     unlink_handle,
 )
+from app.workers.enqueue import enqueue_sync
 
 router = APIRouter(prefix="/handles", tags=["handles"])
 
@@ -59,7 +60,7 @@ async def confirm(
     current_user: User = Depends(get_current_user),
 ) -> HandleVerifiedResponse:
     row = await confirm_verification(db, current_user.id, body.handle_id)
-    _enqueue_sync(row.id, background_tasks)
+    enqueue_sync(row.id, background_tasks)
     return HandleVerifiedResponse(
         handle_id=row.id,
         handle=row.handle,
@@ -96,7 +97,7 @@ async def manual_sync(
     handle.last_manual_sync_at = datetime.now(UTC)
     await db.commit()
 
-    task_id = _enqueue_sync(handle_id, background_tasks)
+    task_id = enqueue_sync(handle_id, background_tasks)
     return SyncResponse(task_id=task_id, handle_id=handle_id)
 
 
@@ -107,15 +108,3 @@ async def unlink(
     current_user: User = Depends(get_current_user),
 ) -> None:
     await unlink_handle(db, current_user.id, handle_id)
-
-
-def _enqueue_sync(handle_id: uuid.UUID, background_tasks: BackgroundTasks) -> str:
-    """Try Celery first; fall back to a FastAPI background task when Celery/Redis is unavailable."""
-    try:
-        from app.workers.cf_sync import sync_handle
-        task = sync_handle.delay(str(handle_id))
-        return task.id
-    except Exception:
-        from app.workers.cf_sync import _sync_handle_async
-        background_tasks.add_task(_sync_handle_async, handle_id)
-        return str(uuid.uuid4())

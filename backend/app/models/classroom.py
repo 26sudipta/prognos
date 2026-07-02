@@ -32,6 +32,11 @@ class Classroom(TimestampMixin, Base):
         index=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # When the classroom was last bulk-synced via the "Sync" button — drives the
+    # per-classroom cooldown that protects the shared CF rate-limit budget.
+    last_bulk_sync_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=True
+    )
 
 
 class ClassroomInvite(Base):

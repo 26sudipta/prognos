@@ -31,6 +31,7 @@ from app.services.classroom import (
     list_members,
     remove_member,
     revoke_invite,
+    sync_classroom,
 )
 
 
@@ -442,6 +443,153 @@ async def test_leaderboard_returns_entries_after_upsert(
     assert result.entries[0].cf_rating == 2800
     assert result.entries[0].is_me is True
     assert result.entries[0].rank == 1
+
+
+# ── Classroom bulk sync ("Sync" button) ───────────────────────────────────────
+
+async def _handle_id_for(db_session: AsyncSession, user_id: uuid.UUID) -> uuid.UUID:
+    from sqlalchemy import select
+    return (
+        await db_session.execute(
+            select(UserHandle.id).where(UserHandle.user_id == user_id)
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_sync_classroom_enqueues_members_in_leaderboard_order(
+    db_session: AsyncSession, classroom, invite, student_with_handle: User, teacher_user: User, monkeypatch
+):
+    from fastapi import BackgroundTasks
+
+    await join_classroom(db_session, invite.token, student_with_handle)
+
+    teacher_hid = await _handle_id_for(db_session, teacher_user.id)
+    student_hid = await _handle_id_for(db_session, student_with_handle.id)
+
+    # Fresh leaderboard rows so ordering is deterministic (teacher rated higher → first).
+    now = datetime.now(UTC)
+    db_session.add_all([
+        ClassroomLeaderboard(
+            classroom_id=classroom.id, user_id=teacher_user.id, cf_handle="t",
+            user_name="T", cf_rating=2800, computed_at=now,
+        ),
+        ClassroomLeaderboard(
+            classroom_id=classroom.id, user_id=student_with_handle.id, cf_handle="s",
+            user_name="S", cf_rating=1500, computed_at=now,
+        ),
+    ])
+    await db_session.commit()
+
+    enqueued: list[uuid.UUID] = []
+    monkeypatch.setattr(
+        "app.services.classroom.enqueue_sync",
+        lambda hid, bt: enqueued.append(hid) or "task",
+    )
+
+    result = await sync_classroom(db_session, classroom.id, teacher_user.id, BackgroundTasks())
+    assert result.members_enqueued == 2
+    assert enqueued == [teacher_hid, student_hid]  # top→bottom of the board
+
+
+@pytest.mark.asyncio
+async def test_sync_classroom_cooldown_returns_429(
+    db_session: AsyncSession, classroom, teacher_user: User, monkeypatch
+):
+    from fastapi import BackgroundTasks, HTTPException
+
+    monkeypatch.setattr("app.services.classroom.enqueue_sync", lambda hid, bt: "task")
+
+    await sync_classroom(db_session, classroom.id, teacher_user.id, BackgroundTasks())
+    with pytest.raises(HTTPException) as exc:
+        await sync_classroom(db_session, classroom.id, teacher_user.id, BackgroundTasks())
+    assert exc.value.status_code == 429
+    assert exc.value.detail["retry_after_seconds"] > 0
+
+
+@pytest.mark.asyncio
+async def test_sync_classroom_non_member_raises_403(
+    db_session: AsyncSession, classroom, student_user: User, monkeypatch
+):
+    from fastapi import BackgroundTasks, HTTPException
+
+    monkeypatch.setattr("app.services.classroom.enqueue_sync", lambda hid, bt: "task")
+    with pytest.raises(HTTPException) as exc:
+        await sync_classroom(db_session, classroom.id, student_user.id, BackgroundTasks())
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_leaderboard_syncing_flag_reflects_in_progress_handle(
+    db_session: AsyncSession, classroom, teacher_user: User
+):
+    from sqlalchemy import update
+    from app.models.user_handle import HandleSyncStatus
+
+    # Not syncing initially.
+    result = await get_leaderboard(db_session, classroom.id, teacher_user.id)
+    assert result.syncing is False
+
+    await db_session.execute(
+        update(UserHandle)
+        .where(UserHandle.user_id == teacher_user.id)
+        .values(sync_status=HandleSyncStatus.IN_PROGRESS)
+    )
+    await db_session.commit()
+
+    result = await get_leaderboard(db_session, classroom.id, teacher_user.id)
+    assert result.syncing is True
+
+
+@pytest.mark.asyncio
+async def test_sync_classroom_marks_handles_in_progress(
+    db_session: AsyncSession, classroom, teacher_user: User, monkeypatch
+):
+    # The immediate leaderboard read after a sync must report syncing=true so the frontend
+    # starts polling — even though the actual BackgroundTasks run after the response.
+    from fastapi import BackgroundTasks
+    from sqlalchemy import select
+    from app.models.user_handle import HandleSyncStatus
+
+    monkeypatch.setattr("app.services.classroom.enqueue_sync", lambda hid, bt: "task")
+    await sync_classroom(db_session, classroom.id, teacher_user.id, BackgroundTasks())
+
+    status_val = (
+        await db_session.execute(
+            select(UserHandle.sync_status).where(UserHandle.user_id == teacher_user.id)
+        )
+    ).scalar_one()
+    assert status_val == HandleSyncStatus.IN_PROGRESS
+
+    result = await get_leaderboard(db_session, classroom.id, teacher_user.id)
+    assert result.syncing is True
+
+
+@pytest.mark.asyncio
+async def test_leaderboard_rebuilds_when_member_synced_after_board(
+    db_session: AsyncSession, classroom, teacher_user: User
+):
+    # Free tier has no broker, so member syncs don't rebuild the cache. A read must rebuild
+    # when a member's last_synced_at is newer than the (still within-TTL) board — otherwise the
+    # leaderboard would show stale numbers for up to the TTL after an on-demand sync.
+    from sqlalchemy import select
+
+    now = datetime.now(UTC)
+    # A fresh (within-TTL) but bogus cached row.
+    db_session.add(ClassroomLeaderboard(
+        classroom_id=classroom.id, user_id=teacher_user.id, cf_handle="t",
+        user_name="T", cf_rating=9999, solved_count=999, computed_at=now - timedelta(minutes=1),
+    ))
+    # Member synced more recently than the board was built → board is "behind".
+    handle = (
+        await db_session.execute(select(UserHandle).where(UserHandle.user_id == teacher_user.id))
+    ).scalar_one()
+    handle.last_synced_at = now
+    await db_session.commit()
+
+    result = await get_leaderboard(db_session, classroom.id, teacher_user.id)
+    # Rebuilt from real (empty) data → the bogus 999 is gone.
+    assert result.entries[0].solved_count == 0
 
 
 # ── Cohort analytics ──────────────────────────────────────────────────────────

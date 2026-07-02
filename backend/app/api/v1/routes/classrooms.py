@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
@@ -10,6 +10,7 @@ from app.schemas.classroom import (
     ClassroomCreateRequest,
     ClassroomResponse,
     ClassroomsListResponse,
+    ClassroomSyncResponse,
     CohortAnalytics,
     InviteListResponse,
     InviteResponse,
@@ -33,6 +34,7 @@ from app.services.classroom import (
     list_members,
     remove_member,
     revoke_invite,
+    sync_classroom,
 )
 
 router = APIRouter(prefix="/classrooms", tags=["classrooms"])
@@ -103,6 +105,20 @@ async def get_classroom_leaderboard(
     current_user: User = Depends(get_current_user),
 ) -> LeaderboardResponse:
     return await get_leaderboard(db, classroom_id, current_user.id)
+
+
+@router.post(
+    "/{classroom_id}/sync",
+    response_model=ClassroomSyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def sync_classroom_endpoint(
+    classroom_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ClassroomSyncResponse:
+    return await sync_classroom(db, classroom_id, current_user.id, background_tasks)
 
 
 @router.get("/{classroom_id}/cohort", response_model=CohortAnalytics)

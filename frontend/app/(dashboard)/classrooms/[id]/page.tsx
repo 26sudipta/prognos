@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Users, BarChart2, Settings2, Trash2, LogOut, Loader2, ArrowLeft } from "lucide-react";
+import { Users, BarChart2, Settings2, Trash2, LogOut, Loader2, ArrowLeft, RefreshCw } from "lucide-react";
 import { useAuth } from "@/app/_components/auth-provider";
 import {
   Classroom,
@@ -17,6 +17,7 @@ import {
   fetchLeaderboard,
   fetchMembers,
   leaveClassroom,
+  syncClassroom,
 } from "@/app/_lib/classrooms";
 import { LeaderboardTable, LeaderboardTableSkeleton } from "./_components/leaderboard-table";
 import { InvitePanel } from "./_components/invite-panel";
@@ -41,8 +42,34 @@ export default function ClassroomDetailPage() {
   const [isLeaving, setIsLeaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollErrorsRef = useRef(0);
 
   const isTeacher = classroom?.my_role === "teacher";
+
+  const stopPoll = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const loadLeaderboard = useCallback(() => {
+    if (!token || !classroomId) return;
+    fetchLeaderboard(token, classroomId)
+      .then((lb) => {
+        pollErrorsRef.current = 0;
+        setLeaderboard(lb);
+      })
+      .catch(() => {
+        // Keep the last good board on a transient poll error (only the very first load
+        // may show the skeleton); give up polling after repeated failures.
+        setLeaderboard((prev) => prev);
+        if (++pollErrorsRef.current >= 5) stopPoll();
+      });
+  }, [token, classroomId, stopPoll]);
 
   useEffect(() => {
     if (!token || !classroomId) return;
@@ -51,11 +78,37 @@ export default function ClassroomDetailPage() {
 
   useEffect(() => {
     if (!token || !classroomId) return;
-    fetchLeaderboard(token, classroomId).then(setLeaderboard).catch(() => setLeaderboard(undefined));
+    loadLeaderboard();
     fetchMembers(token, classroomId)
       .then((r) => setMembers(r.members))
       .catch(() => setMembers([]));
-  }, [token, classroomId]);
+  }, [token, classroomId, loadLeaderboard]);
+
+  // While any member is mid-sync, poll the leaderboard so rows refresh as results land.
+  useEffect(() => {
+    if (!leaderboard?.syncing) {
+      stopPoll();
+      return;
+    }
+    if (pollRef.current) return;
+    pollErrorsRef.current = 0;
+    pollRef.current = setInterval(loadLeaderboard, 5000);
+    return stopPoll;
+  }, [leaderboard?.syncing, loadLeaderboard, stopPoll]);
+
+  async function handleSync() {
+    if (!token || !classroomId || isSyncing) return;
+    setIsSyncing(true);
+    setSyncMsg(null);
+    try {
+      await syncClassroom(token, classroomId);
+      loadLeaderboard(); // picks up syncing=true → starts the poll
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
 
   useEffect(() => {
     if (!token || !classroomId || !isTeacher) return;
@@ -126,6 +179,15 @@ export default function ClassroomDetailPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleSync}
+            disabled={isSyncing || leaderboard?.syncing}
+            title="Refresh every member's data from Codeforces"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-primary-400 hover:bg-primary-500/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing || leaderboard?.syncing ? "animate-spin" : ""}`} />
+            {leaderboard?.syncing ? "Syncing…" : "Sync"}
+          </button>
           {isTeacher ? (
             confirmDelete ? (
               <div className="flex items-center gap-2">
@@ -184,6 +246,12 @@ export default function ClassroomDetailPage() {
         </div>
       </div>
 
+      {syncMsg && (
+        <div className="px-4 py-2 rounded-lg bg-warning-500/10 border border-warning-500/20">
+          <p className="text-xs text-warning-400">{syncMsg}</p>
+        </div>
+      )}
+
       {/* Invite panel — teacher only */}
       {isTeacher && invites !== undefined && (
         <div className="p-4 rounded-xl bg-bg-surface border border-border-subtle">
@@ -222,10 +290,13 @@ export default function ClassroomDetailPage() {
           ) : (
             <LeaderboardTable entries={leaderboard.entries} />
           )}
-          {leaderboard?.computed_at && (
-            <div className="px-4 py-2 border-t border-border-subtle">
+          {(leaderboard?.computed_at || leaderboard?.syncing) && (
+            <div className="px-4 py-2 border-t border-border-subtle flex items-center gap-2">
+              {leaderboard?.syncing && <Loader2 className="w-3 h-3 animate-spin text-primary-400" />}
               <p className="text-xs text-text-muted">
-                Updated {new Date(leaderboard.computed_at).toLocaleString()}
+                {leaderboard?.syncing
+                  ? "Refreshing members from Codeforces…"
+                  : `Updated ${new Date(leaderboard!.computed_at!).toLocaleString()}`}
               </p>
             </div>
           )}

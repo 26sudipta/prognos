@@ -103,6 +103,14 @@ class LeaderboardResponse(BaseModel):
     entries: list[LeaderboardEntry]
     member_count: int
     computed_at: datetime | None
+    # True while at least one member's handle is mid-sync, so the frontend can poll
+    # and re-render as bulk-sync results land.
+    syncing: bool = False
+
+
+class ClassroomSyncResponse(BaseModel):
+    classroom_id: uuid.UUID
+    members_enqueued: int
 
 
 class CohortTag(BaseModel):

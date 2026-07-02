@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 from statistics import mean
 from typing import Any
 
-from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select
+from fastapi import BackgroundTasks, HTTPException, status
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +20,10 @@ from app.models.classroom import (
     ClassroomMembershipRole,
 )
 from app.models.user import User
-from app.models.user_handle import UserHandle
+from app.models.user_handle import HandleSyncStatus, UserHandle
 from app.schemas.classroom import (
     ClassroomResponse,
+    ClassroomSyncResponse,
     CohortAnalytics,
     CohortMemberAttendance,
     CohortTag,
@@ -32,6 +33,7 @@ from app.schemas.classroom import (
     LeaderboardResponse,
     MemberResponse,
 )
+from app.workers.enqueue import enqueue_sync
 
 INVITE_EXPIRE_DAYS = 7
 
@@ -457,6 +459,26 @@ logger = logging.getLogger(__name__)
 # How long a cached leaderboard is served before a read triggers an inline rebuild.
 LEADERBOARD_TTL = timedelta(minutes=10)
 
+# Minimum gap between "Sync" button presses for a classroom — protects the shared CF
+# rate-limit budget (a full 100-member re-sync already takes ~3 min of CF calls).
+BULK_SYNC_COOLDOWN = timedelta(minutes=15)
+
+
+async def _classroom_syncing(db: AsyncSession, classroom_id: uuid.UUID) -> bool:
+    """True if any member's verified handle is currently mid-sync."""
+    result = await db.execute(
+        select(func.count())
+        .select_from(UserHandle)
+        .join(ClassroomMembership, ClassroomMembership.user_id == UserHandle.user_id)
+        .where(
+            ClassroomMembership.classroom_id == classroom_id,
+            UserHandle.is_verified.is_(True),
+            UserHandle.is_active.is_(True),
+            UserHandle.sync_status == HandleSyncStatus.IN_PROGRESS,
+        )
+    )
+    return result.scalar_one() > 0
+
 
 async def _fetch_leaderboard_rows(db: AsyncSession, classroom_id: uuid.UUID):
     result = await db.execute(
@@ -466,20 +488,49 @@ async def _fetch_leaderboard_rows(db: AsyncSession, classroom_id: uuid.UUID):
             ClassroomLeaderboard.cf_rating.desc().nulls_last(),
             ClassroomLeaderboard.solved_count.desc(),
         )
+        # populate_existing: sessions use expire_on_commit=False, so after an inline
+        # rebuild (a Core upsert + commit) the identity-mapped rows would otherwise be
+        # returned stale. Force fresh DB values so the rebuild is reflected immediately.
+        .execution_options(populate_existing=True)
     )
     return result.scalars().all()
 
 
-async def _ensure_leaderboard(db: AsyncSession, classroom_id: uuid.UUID, member_count: int):
-    """Return leaderboard rows, rebuilding the cache inline when it's empty or stale.
+async def _max_member_sync(db: AsyncSession, classroom_id: uuid.UUID):
+    """Newest last_synced_at across the classroom's verified members (None if none synced)."""
+    result = await db.execute(
+        select(func.max(UserHandle.last_synced_at))
+        .select_from(UserHandle)
+        .join(ClassroomMembership, ClassroomMembership.user_id == UserHandle.user_id)
+        .where(
+            ClassroomMembership.classroom_id == classroom_id,
+            UserHandle.is_verified.is_(True),
+            UserHandle.is_active.is_(True),
+        )
+    )
+    return result.scalar_one_or_none()
 
-    The worker-free (free-tier) deployment has no broker, so nothing rebuilds the cache in
-    the background. Building it on read keeps it populated and fresh. DB-only → stays fast.
+
+async def _ensure_leaderboard(db: AsyncSession, classroom_id: uuid.UUID, member_count: int):
+    """Return leaderboard rows, rebuilding the cache inline when it's empty, stale, or behind.
+
+    The worker-free (free-tier) deployment has no broker, so `_trigger_leaderboard_rebuilds`
+    (`.delay()`) is a no-op — nothing rebuilds the cache after a member sync. So we also rebuild
+    on read whenever a member's data is newer than the board ("behind"): this makes on-demand and
+    cron syncs reflect promptly (and gives live incremental updates while a bulk sync runs) instead
+    of waiting out the TTL. DB-only → stays fast, and self-limits (after a rebuild the board is no
+    longer behind).
     """
     rows = await _fetch_leaderboard_rows(db, classroom_id)
     newest = rows[0].computed_at if rows else None
     is_stale = newest is None or (datetime.now(UTC) - newest) > LEADERBOARD_TTL
-    if member_count > 0 and is_stale:
+
+    is_behind = False
+    if member_count > 0 and not is_stale:
+        max_sync = await _max_member_sync(db, classroom_id)
+        is_behind = max_sync is not None and (newest is None or max_sync > newest)
+
+    if member_count > 0 and (is_stale or is_behind):
         from app.workers.classroom_sync import rebuild_leaderboard
         try:
             await rebuild_leaderboard(db, classroom_id)
@@ -526,6 +577,91 @@ async def get_leaderboard(
         entries=entries,
         member_count=member_count,
         computed_at=computed_at,
+        syncing=await _classroom_syncing(db, classroom_id),
+    )
+
+
+async def sync_classroom(
+    db: AsyncSession,
+    classroom_id: uuid.UUID,
+    user_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+) -> ClassroomSyncResponse:
+    """Bulk-sync every member of a classroom from CF, top→bottom of the leaderboard.
+
+    Any member (teacher or student) may trigger it. Clients never send CF data — the
+    server fetches authoritatively on its own IP, so the leaderboard can only ever
+    reflect real Codeforces data. Enqueued syncs run through the shared rate-limited
+    path (Celery, else sequential BackgroundTasks with a 2s inter-call delay).
+    """
+    classroom = await _get_classroom_or_404(db, classroom_id)
+    await _assert_member(db, classroom_id, user_id)
+
+    now = datetime.now(UTC)
+    if classroom.last_bulk_sync_at and now - classroom.last_bulk_sync_at < BULK_SYNC_COOLDOWN:
+        retry_after = int(
+            (classroom.last_bulk_sync_at + BULK_SYNC_COOLDOWN - now).total_seconds()
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": "Classroom sync cooldown active",
+                "retry_after_seconds": retry_after,
+            },
+        )
+
+    # Order members by current leaderboard rank so the visible top of the board
+    # refreshes first; append any members missing from the cache (e.g. never synced).
+    member_count = await _member_count(db, classroom_id)
+    rows = await _ensure_leaderboard(db, classroom_id, member_count)
+    ordered_user_ids = [r.user_id for r in rows]
+
+    all_members = (
+        await db.execute(
+            select(ClassroomMembership.user_id).where(
+                ClassroomMembership.classroom_id == classroom_id
+            )
+        )
+    ).scalars().all()
+    for mid in all_members:
+        if mid not in ordered_user_ids:
+            ordered_user_ids.append(mid)
+
+    # Map each member to their verified CF handle_id, preserving leaderboard order.
+    handle_rows = (
+        await db.execute(
+            select(UserHandle.user_id, UserHandle.id).where(
+                UserHandle.user_id.in_(ordered_user_ids),
+                UserHandle.is_verified.is_(True),
+                UserHandle.is_active.is_(True),
+            )
+        )
+    ).all()
+    user_to_handle = {uid: hid for uid, hid in handle_rows}
+    ordered_handle_ids = [
+        user_to_handle[uid] for uid in ordered_user_ids if uid in user_to_handle
+    ]
+
+    # Pre-mark handles in_progress so the leaderboard read that fires immediately after this
+    # response deterministically reports syncing=true and the frontend starts polling — the
+    # enqueued BackgroundTasks only run *after* the response. Safe: _sync_handle_async always
+    # runs regardless of status and cron re-syncs all verified handles, so a handle can't get
+    # stuck if a task fails to run.
+    if ordered_handle_ids:
+        await db.execute(
+            update(UserHandle)
+            .where(UserHandle.id.in_(ordered_handle_ids))
+            .values(sync_status=HandleSyncStatus.IN_PROGRESS)
+        )
+
+    for handle_id in ordered_handle_ids:
+        enqueue_sync(handle_id, background_tasks)
+
+    classroom.last_bulk_sync_at = now
+    await db.commit()
+
+    return ClassroomSyncResponse(
+        classroom_id=classroom_id, members_enqueued=len(ordered_handle_ids)
     )
 
 
