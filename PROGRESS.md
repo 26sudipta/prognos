@@ -762,5 +762,13 @@ cost envelopes, anti-goals. Supersedes `freshness_scalability_plan.md` (pointer 
 First executable slice when scaling begins: **M0** (paid Redis + Tier-0 token bucket + per-handle
 locks + Celery re-enabled).
 
-## Phase 5 — Mobile Companion [TODO]
+## Phase 5 — Mobile App (Android + iOS) [PLANNED]
+**Plan finalized:** 2026-07-02 — `docs/mobile_implementation_plan.md` (supersedes the
+Android-only Kotlin plan; user widened scope to both platforms → **Flutter**, research-backed:
+RN's Notifee archived Apr 2026, `flutter_local_notifications` v22 active; market wide open —
+WatchR dead, no competitor has alarms+streaks+classrooms). Headline feature: **local contest
+reminders** (per-contest bell + per-platform auto-rules, 1h+15m defaults, exact alarms
+Doze/reboot-proof, iOS 64-cap rolling window, first-run reliability flow). Feature parity with
+web, cached-first rendering (<2s cold start), web design tokens ported. Slices M0–M6; M1 needs
+two additive backend auth endpoints (verified Google ID-token exchange + body refresh).
 ## Phase 6 — AI Layer [TODO]

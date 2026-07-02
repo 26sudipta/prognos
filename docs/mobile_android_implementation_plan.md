@@ -1,5 +1,8 @@
 # PROGNOS Android App — Implementation Plan
-**Status:** Approved plan — not yet implemented. Build one vertical slice at a time (CLAUDE.md §2).
+**Status:** SUPERSEDED by `mobile_implementation_plan.md` — the user widened scope to
+**Android + iOS**, which broke this doc's Android-native (Kotlin/Compose) premise; the stack is
+now Flutter (research-backed, July 2026). The backend-auth design, reminder architecture, and
+build-order shape below carry over into the new plan. Kept for the native-Android reasoning.
 
 ## Context
 
