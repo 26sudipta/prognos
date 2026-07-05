@@ -39,6 +39,22 @@ dependencies:
   google_fonts: ^8.1.0
   intl: ^0.20.3
   flutter_secure_storage: ^10.3.1
+  google_sign_in: ^7.2.0
+  drift: ^2.34.0
+  drift_flutter: ^0.3.0
+  sqlite3_flutter_libs: ^0.6.0+eol
+  path_provider: ^2.1.6
+  path: ^1.9.1
+  workmanager: ^0.9.0+3
+  url_launcher: ^6.3.2
+  flutter_local_notifications: ^22.0.1
+  timezone: ^0.11.1
+  flutter_timezone: ^5.1.0
+  permission_handler: ^12.0.3
+  device_info_plus: ^13.2.0
+  fl_chart: ^1.2.0
+  app_links: ^7.2.0
+  home_widget: ^0.9.3
 
 dev_dependencies:
   flutter_test:
@@ -50,6 +66,35 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  drift_dev: ^2.34.0
+  build_runner: ^2.15.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.8
+
+# App launcher icon — the PROGNOS mark (indigo square + trending-up arrow),
+# matching the web favicon (frontend/app/icon.tsx). Regenerate:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#6366F1"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  remove_alpha_ios: true
+
+# Launch splash — dark background + the logo, so the launch→first-frame is
+# branded (no white flash) and consistent with the web login. Regenerate:
+#   dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#070B14"
+  image: assets/icon/splash_logo.png
+  color_dark: "#070B14"
+  image_dark: assets/icon/splash_logo.png
+  android_12:
+    color: "#070B14"
+    image: assets/icon/splash_logo.png
+    color_dark: "#070B14"
+    image_dark: assets/icon/splash_logo.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

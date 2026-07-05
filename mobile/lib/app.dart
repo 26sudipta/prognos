@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'theme/app_theme.dart';
-import 'ui/shell/home_shell.dart';
+import 'ui/auth/auth_gate.dart';
 
 /// Root application widget. Dark-first, no debug banner, single home shell.
 /// Routing (deep links for `prognos://join/{token}` and contest notifications)
@@ -16,7 +16,7 @@ class PrognosApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       themeMode: ThemeMode.dark,
-      home: const HomeShell(),
+      home: const AuthGate(),
     );
   }
 }
