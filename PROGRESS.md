@@ -764,6 +764,134 @@ locks + Celery re-enabled).
 
 ## Phase 5 — Mobile App (Android + iOS) [IN_PROGRESS]
 
+### M6 — Home-Screen Widget + Polish + Release [DONE]
+**Completed:** 2026-07-04. Full write-up: `docs/phase_M6.md`. **Mobile M0–M6 complete.**
+- **Android home-screen widget (R7):** next/live contest + countdown (static relative string) +
+  current streak. `home_widget` — Flutter computes a flat payload from the drift caches
+  (`buildWidgetPayload`: `nextContest` + cached dashboard streak) → Kotlin `ContestWidgetProvider`
+  (RemoteViews) renders it; tap opens the app. Updated from the **main isolate** (cache/analytics
+  change) and the **workmanager isolate** (after bg refresh). No ticking (widgets refresh ~30 min);
+  graceful `—` when streak cache absent.
+- **Release signing:** `build.gradle.kts` reads gitignored `key.properties` **only if present**,
+  else debug — keyless release builds still succeed (verified). Secrets already gitignored.
+- **Accessibility:** tooltips/semantics on icon-only buttons (invite copy/revoke, remove member);
+  IconButton 48dp tap targets; theme-driven contrast.
+- **Docs:** `docs/store_listing.md` (draft) + `docs/mobile_release_checklist.md` (keystore,
+  Shorebird, store submission, physical-device smoke, outstanding OAuth clients).
+- **Verify:** `flutter analyze` clean; `flutter test` **55 pass** (was 52) — widget payload mapping
+  (empty/next/live); `flutter build apk --release` ✓; emulator install+launch + widget render.
+- **User-gated (can't run here):** real keystore, store submission, Shorebird account, physical-device
+  cold-start/reminder/widget checks, Android OAuth client (debug+release SHA-1).
+
+### M5 — Classrooms + Handle Verification [DONE]
+**Completed:** 2026-07-04. Full write-up: `docs/phase_M5.md`.
+- **Part A — Handle verification:** 3-step wizard (enter handle → copy `PGS-XXXX` into CF
+  Organization field → verify) as a state machine restored from `GET /handles`
+  (None→Pending→Verified/Failed/Locked). API maps confirm 400/423/410 → typed `ConfirmException`
+  (mismatch+attempts / locked / expired) so the UI never sees Dio. On success invalidates
+  `analyticsProvider` → **the M4 dashboard fills in with live data**. Reached from the M4 nudge.
+- **Part B — Classrooms ("Classes" tab):** cached-first list (drift KV) + create + join-by-code;
+  detail = leaderboard (CF-coloured, is_me highlight, poll-while-syncing) / members / cohort +
+  invites (teacher) / bulk sync / leave-delete. Leaderboard is `FutureProvider.family`
+  network-first-cache-fallback (Riverpod 3 non-codegen family notifier arg access is awkward).
+- **Invite deep links** `prognos://join/{token}` via `app_links` (cold-launch + running), Android
+  VIEW intent-filter + iOS CFBundleURLTypes; join screen previews via public `join-preview` then joins.
+- **Privacy:** `clearUserData` (sign-out) now also wipes `classrooms.*` cache; test extended.
+- **Verify:** `flutter analyze` clean; `flutter test` **52 pass** (was 41) — handle state machine
+  (7), classroom model round-trip + list/leaderboard cache + offline fallback; `flutter build apk
+  --release` ✓ (app_links R8-clean). Live verify/leaderboards + on-device join gated on OAuth
+  client (M1) + verified handle.
+
+### M4 — Dashboard + Insights [DONE]
+**Completed:** 2026-07-03. Full write-up: `docs/phase_M4.md`.
+- **Personal analytics on mobile**, cached-first, matching the web. Dashboard tab with an
+  **Overview ⇄ Insights** segmented toggle: Overview = stat strip (streak/solved/rating/peak, CF
+  ladder) + Canvas activity heatmap (53×7, 5 levels) + `fl_chart` rating chart; Insights = tag
+  bars + Focus Areas (weakness signals) + refreshable recommendations.
+- **Cached-first (same contract as M2), 6 endpoints:** parallel fetch → drift blob cache (reuses
+  the `Settings` KV table via model `toJson`/`fromJson` round-trip, no new migration) → never
+  cleared on failure (offline note). **Polls every 5s while `is_syncing`**, stops on completion.
+- `has_verified_handle=false` → "link handle on web" nudge (handle-verify is M5).
+- Heatmap is a `CustomPainter` (no dep); only the rating chart needed a package (`fl_chart`).
+- **Privacy fix (sign-out):** analytics is the first *private* per-user local cache; left alone,
+  account-switching on one device would leak User A's dashboard (and reminders) to User B.
+  `signOut` now wipes user-scoped drift rows (`analytics.*`, stars, rules, scheduled reminders,
+  reminder settings), cancels all OS notifications, and invalidates in-memory providers; public
+  contests cache kept. Pinned by a test.
+- **Verify:** `flutter analyze` clean; `flutter test` **41 pass** (was 31) — incl. a
+  `DashboardScreen` widget test (stat strip + heatmap + fl_chart, toggle to Insights), model
+  round-trip, repository offline, and sign-out cleanup tests; `flutter build apk --release` ✓
+  (60 MB, fl_chart R8-clean). Live dashboard needs a verified handle (M5) + OAuth client (M1).
+
+### M3 — Contest Reminders ⭐ [DONE — device-only firing gated on a physical Android test]
+**Completed:** 2026-07-03. Full write-up: `docs/phase_M3.md`.
+- **The headline feature.** Star a contest or enable a platform → on-device exact alarms fire at
+  `start − lead` (default 1h + 15m), offline/screen-off; tap deep-links to contest detail.
+- **Reconcile ≠ fire:** an idempotent reconcile loop computes desired = (starred ∪ platform-rule)
+  × leads, keyed by **deterministic 31-bit FNV-1a IDs**, and diffs against the **OS pending set**
+  (`pendingNotificationRequests()`) — never against our own ledger (which desyncs on reboot / iOS
+  eviction). Drift `scheduled_reminders` is intent-only (drives the "upcoming" list).
+- **Correctness traps handled:** `tz.setLocalLocation` (else every alarm is UTC-offset-wrong);
+  `AndroidScheduleMode.alarmClock` (Doze-exempt) + `RECEIVE_BOOT_COMPLETED` + FLN boot receiver
+  (survives reboot); cold-launch deep link via `getNotificationAppLaunchDetails()` vs warm tap
+  stream; single-isolate reconcile (main isolate on open/foreground/cache-update — no FLN in the
+  bg isolate).
+- **Reliability flow (R3):** notifications → exact-alarm grant → OEM battery whitelist (tailored
+  per manufacturer via device_info_plus) → test notification. Re-runnable from Reminders screen.
+- **Decisions (confirmed this slice):** per-platform rules (no division filters); in-app detail
+  deep link; 1h + 15m default leads.
+- Schema: drift v2 (+ StarredContests, PlatformRules, ScheduledReminders, Settings). Deps:
+  flutter_local_notifications, timezone, flutter_timezone, permission_handler, device_info_plus.
+  Android: reminder permissions + FLN receivers + **core-library desugaring** (FLN 22 needs java.time).
+- **Verify:** `flutter analyze` clean; `flutter test` 31 pass (was 19); `flutter build apk --debug`
+  **and `--release`** ✓; release APK **installed + launched on an emulator** (renders login screen).
+  Firing/reboot/permissions are device-only (stated in doc); scheduling logic is unit-tested.
+- **Release crash fixed (R8):** the first release build crashed at process start —
+  `NoSuchMethodException: androidx.work.impl.WorkDatabase_Impl.<init>` (R8 stripped the
+  reflectively-instantiated Room constructor the `workmanager` plugin needs via
+  androidx.startup). Debug never showed it. Fixed with `androidx.work`/`androidx.room` + Room DB
+  ctor keep rules in `android/app/proguard-rules.pro`; re-verified on emulator.
+
+### M2 — Contests + Offline Cache [DONE]
+**Completed:** 2026-07-03. Full write-up: `docs/phase_M2.md`.
+- **First mobile tab with real data.** `GET /contests` (30-day window) → cached in **drift**
+  (SQLite) → rendered **cached-first** (instant from cache, background refresh), fully usable
+  offline. Feature parity with the web contests page: list (urgency lanes LIVE/TODAY/THIS
+  WEEK/NEXT WEEK/LATER), week calendar, detail sheet w/ "Open contest" (url_launcher), platform
+  filter, next/live hero + escalating countdown, pull-to-refresh.
+- **Offline guarantee = one invariant:** a failed fetch never propagates or clears the cache
+  (`ContestsRepository.fetchAndReplace` writes only on success; notifier keeps last-good rows).
+  Tested against a *throwing* network, not an empty response.
+- **Client-side platform filtering** over the cached window (offline-friendly, no re-fetch);
+  API still serializes `platform` as `ListFormat.multi` (`?platform=a&platform=b`) for FastAPI.
+- **Background refresh:** `workmanager` ~8h periodic, headless isolate — rebuilds auth (rotate
+  refresh token via `/auth/refresh/mobile`, persist it), fetch, replace cache. Cache-only; no
+  alarms (M3). On-app-open refresh in the notifier is the real freshness guarantee.
+- **Timezone:** store UTC, group/format local (`.toLocal()`); grouping ported 1:1 from web
+  `_lib/contests.ts`; local-day boundary case explicitly tested.
+- Deps added: drift, drift_flutter, sqlite3_flutter_libs, path_provider, path, workmanager,
+  url_launcher (+ dev: drift_dev, build_runner). Android manifest: INTERNET + https VIEW query.
+- **Auth-gate offline fix (M1 layer):** `restoreSession` was wiping the session on *any* error —
+  a cold launch in airplane mode dumped the user on login and destroyed credentials, making the
+  offline Contests path unreachable. Now distinguishes network error (keep session + open with a
+  keystore-cached profile) from auth rejection (401/403 → clear). `AuthInterceptor` hardened the
+  same way. Lazy `ListView.builder` bounds live countdown timers to the viewport (R5).
+- **Verify:** `flutter analyze` clean; `flutter test` 19 pass (was 3); `flutter build apk --debug` ✓.
+
+### M1 — Auth (Google Sign-In) [DONE — live test gated on user's OAuth clients]
+**Completed:** 2026-07-03. Full write-up: `docs/phase_M1.md`.
+- **Backend:** `verify_google_id_token` (google-auth: signature+aud+iss+exp) — the *verifying*
+  counterpart to the web's no-verify `decode_google_id_token`; `POST /auth/google/mobile` +
+  `POST /auth/refresh/mobile` returning the pair in the body; reuses `upsert_user`/`create_session`/
+  `rotate_refresh_token`. Deps: google-auth, requests. +5 tests (16 pass in auth file).
+- **App:** google_sign_in v7 (`GoogleSignIn.instance` + `initialize(serverClientId)` +
+  `authenticate()`), access token in memory + refresh token in keystore, `AuthInterceptor`
+  (Bearer + one-shot refresh-on-401, persists rotated refresh), `AsyncNotifier` auth controller,
+  login screen + auth gate, shell shows user + sign-out. `flutter analyze` clean, 3 tests pass.
+- **Audience verified identical:** app `serverClientId` == backend `GOOGLE_CLIENT_ID`
+  (`238081955675-…fpdlu`). **User TODO for live sign-in:** create Android (pkg `io.prognos.prognos`
+  + debug SHA-1) and iOS OAuth clients in Google Cloud.
+
 ### M0 — Foundation [DONE]
 **Completed:** 2026-07-02. Full write-up: `docs/phase_M0.md`.
 - Flutter 3.44.4 SDK installed user-local at `~/dev/flutter` (no sudo, removable).
