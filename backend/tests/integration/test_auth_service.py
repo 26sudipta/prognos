@@ -242,3 +242,96 @@ async def test_soft_delete_revokes_all_sessions(
         )
     )
     assert result.scalars().all() == []
+
+
+# ---------------------------------------------------------------------------
+# Mobile auth (M1): verify_google_id_token + /auth/google/mobile + refresh/mobile
+# ---------------------------------------------------------------------------
+
+import app.services.auth as auth_service  # noqa: E402
+from app.api.v1.routes.auth import google_mobile, refresh_mobile  # noqa: E402
+from app.schemas.auth import GoogleMobileRequest, MobileRefreshRequest  # noqa: E402
+
+
+def _patch_google_verify(monkeypatch, payload=None, raises=False):
+    """Patch the google-auth verification boundary (not our wrapper)."""
+    def fake(token, request, audience):
+        if raises:
+            raise ValueError("Token has wrong audience")
+        return payload
+    monkeypatch.setattr("google.oauth2.id_token.verify_oauth2_token", fake)
+
+
+@pytest.mark.asyncio
+async def test_verify_google_id_token_valid(monkeypatch):
+    payload = {"sub": "g1", "email": "a@b.com", "iss": "accounts.google.com"}
+    _patch_google_verify(monkeypatch, payload=payload)
+    result = await auth_service.verify_google_id_token("any-token")
+    assert result["sub"] == "g1"
+
+
+@pytest.mark.asyncio
+async def test_verify_google_id_token_invalid_signature_or_audience_401(monkeypatch):
+    from fastapi import HTTPException
+    _patch_google_verify(monkeypatch, raises=True)
+    with pytest.raises(HTTPException) as exc:
+        await auth_service.verify_google_id_token("forged")
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_verify_google_id_token_bad_issuer_401(monkeypatch):
+    from fastapi import HTTPException
+    _patch_google_verify(monkeypatch, payload={"sub": "g", "email": "e", "iss": "evil.com"})
+    with pytest.raises(HTTPException) as exc:
+        await auth_service.verify_google_id_token("x")
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_google_mobile_endpoint_issues_pair_via_verifying_path(
+    db_session: AsyncSession, monkeypatch
+):
+    # A bogus id_token that would fail real decoding — only the *verifying* path,
+    # patched here, lets it through. Proves the endpoint uses verify, not decode.
+    gid = f"gid_{uuid.uuid4()}"
+    payload = {
+        "sub": gid,
+        "email": f"{uuid.uuid4()}@example.com",
+        "name": "Mobile User",
+        "picture": None,
+        "iss": "accounts.google.com",
+    }
+    _patch_google_verify(monkeypatch, payload=payload)
+
+    resp = await google_mobile(GoogleMobileRequest(id_token="opaque"), db_session)
+
+    assert resp.access_token and resp.refresh_token
+    assert resp.expires_in > 0
+    from app.core.security import hash_token
+    row = (
+        await db_session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == hash_token(resp.refresh_token))
+        )
+    ).scalar_one_or_none()
+    assert row is not None and row.revoked_at is None
+
+    # cleanup the created user
+    user = (await db_session.execute(select(User).where(User.google_id == gid))).scalar_one()
+    await db_session.delete(user)
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_refresh_mobile_rotates_and_returns_pair(db_session: AsyncSession, test_user: User):
+    _, raw = await create_session(db_session, str(test_user.id))
+    resp = await refresh_mobile(MobileRefreshRequest(refresh_token=raw), db_session)
+
+    assert resp.access_token and resp.refresh_token != raw and resp.expires_in > 0
+    from app.core.security import hash_token
+    old = (
+        await db_session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == hash_token(raw))
+        )
+    ).scalar_one()
+    assert old.revoked_at is not None  # rotation revoked the old token

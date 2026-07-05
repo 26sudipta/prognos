@@ -4,7 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.schemas.auth import TokenResponse
+from app.schemas.auth import (
+    GoogleMobileRequest,
+    MobileRefreshRequest,
+    MobileTokenResponse,
+    TokenResponse,
+)
 from app.services.auth import (
     decode_google_id_token,
     exchange_google_code,
@@ -13,6 +18,7 @@ from app.services.auth import (
     rotate_refresh_token,
     upsert_user,
     create_session,
+    verify_google_id_token,
 )
 from app.api.v1.deps import get_current_user
 from app.models.user import User
@@ -75,6 +81,46 @@ async def google_callback(
     )
     _set_refresh_cookie(redirect, raw_refresh)
     return redirect
+
+
+@router.post("/google/mobile", response_model=MobileTokenResponse)
+async def google_mobile(
+    body: GoogleMobileRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MobileTokenResponse:
+    """Native mobile sign-in: exchange a verified Google ID token for a token pair.
+
+    The ID token comes from the device, so it is fully verified (signature +
+    audience) — unlike the web callback which trusts a server-side exchange.
+    Tokens are returned in the body (no cookie); the app stores the refresh token
+    in the OS keystore.
+    """
+    google_payload = await verify_google_id_token(body.id_token)
+    user = await upsert_user(db, google_payload)
+    access_token, raw_refresh = await create_session(db, str(user.id))
+    return MobileTokenResponse(
+        access_token=access_token,
+        refresh_token=raw_refresh,
+        expires_in=settings.JWT_ACCESS_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post("/refresh/mobile", response_model=MobileTokenResponse)
+async def refresh_mobile(
+    body: MobileRefreshRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MobileTokenResponse:
+    """Rotate a body-supplied refresh token and return the new pair.
+
+    Rotation revokes the old refresh token, so the client MUST persist the new
+    `refresh_token` from this response.
+    """
+    new_access, new_refresh, _ = await rotate_refresh_token(db, body.refresh_token)
+    return MobileTokenResponse(
+        access_token=new_access,
+        refresh_token=new_refresh,
+        expires_in=settings.JWT_ACCESS_EXPIRE_MINUTES * 60,
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)

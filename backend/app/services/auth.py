@@ -63,6 +63,48 @@ def decode_google_id_token(id_token: str) -> dict:
         )
 
 
+async def verify_google_id_token(id_token_str: str) -> dict:
+    """Verify a Google ID token that arrived FROM A CLIENT (mobile app).
+
+    Unlike `decode_google_id_token` (which trusts a token fetched server↔Google
+    over HTTPS and skips signature checks), this token is supplied by the device
+    and MUST be fully verified. `verify_oauth2_token` checks the signature against
+    Google's public keys, the expiry, the issuer, AND that the audience equals our
+    client id — all in one call. The audience check is why the app must request the
+    token with `serverClientId = GOOGLE_CLIENT_ID`.
+
+    The google-auth verifier is synchronous (it fetches/caches Google's certs), so
+    run it off the event loop.
+    """
+    from anyio import to_thread
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token as google_id_token
+
+    def _verify() -> dict:
+        return google_id_token.verify_oauth2_token(
+            id_token_str,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
+
+    try:
+        payload = await to_thread.run_sync(_verify)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid Google ID token: {e}",
+        )
+
+    # Belt-and-suspenders: verify_oauth2_token already enforces this, but assert
+    # the issuer explicitly so a future library change can't loosen it silently.
+    if payload.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google ID token issuer",
+        )
+    return payload
+
+
 async def upsert_user(db: AsyncSession, google_payload: dict) -> User:
     """Insert or update user based on google_id."""
     stmt = (
