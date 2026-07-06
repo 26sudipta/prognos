@@ -16,6 +16,7 @@ import {
   BarChart3,
   Sparkles,
   Play,
+  Download,
 } from "lucide-react";
 import LandingNavbar from "@/app/_components/landing-navbar";
 import HandlePreviewWidget from "@/app/_components/handle-preview-widget";
@@ -299,13 +300,13 @@ export default function LandingPage() {
               <h2 className="text-3xl sm:text-4xl font-bold text-text-primary mb-4 leading-tight">
                 PROGNOS on the Go{" "}
                 <span className="text-text-secondary">
-                  — Coming to Android &amp; iOS
+                  — Now on Android
                 </span>
               </h2>
               <p className="text-text-secondary mb-8 leading-relaxed">
                 Contest alarms, quick-view dashboard, and offline access —
                 practice tracking that lives in your pocket, everywhere you
-                compete.
+                compete. Download the Android beta now; iOS is on the way.
               </p>
 
               <ul className="space-y-3 mb-10">
@@ -323,6 +324,25 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
+
+              {/* Primary: direct APK download */}
+              <a
+                href="/prognos.apk"
+                download
+                className="inline-flex items-center gap-3 px-6 py-4 mb-4 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-semibold shadow-lg shadow-primary-500/20 transition-colors"
+              >
+                <Download className="w-5 h-5 shrink-0" />
+                <span>
+                  Download for Android
+                  <span className="block text-xs font-normal text-white/70">
+                    Free APK · Android 6.0+ · ~40&nbsp;MB
+                  </span>
+                </span>
+              </a>
+              <p className="text-xs text-text-muted mb-6">
+                A beta build — you may need to allow installs from your browser
+                in Android settings.
+              </p>
 
               {/* Store badges */}
               <div className="flex flex-wrap gap-3">
