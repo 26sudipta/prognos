@@ -405,75 +405,104 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.15 }}
               className="flex justify-center"
             >
-              <div className="relative w-[220px] h-[450px] rounded-[40px] border-2 border-border-default bg-bg-surface shadow-2xl overflow-hidden">
-                {/* Notch */}
-                <div className="absolute top-0 inset-x-0 flex justify-center pt-3 z-10">
-                  <div className="w-20 h-5 bg-bg-base rounded-full" />
-                </div>
-
-                <div className="pt-12 px-3.5 pb-3.5 flex flex-col gap-3 h-full">
-                  {/* Header */}
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded bg-primary-500 flex items-center justify-center">
-                      <TrendingUp
-                        className="w-3 h-3 text-white"
-                        strokeWidth={2.5}
-                      />
+              <div className="relative w-[230px] h-[470px] rounded-[36px] border-2 border-border-default bg-bg-base shadow-2xl overflow-hidden">
+                {/* Content — mirrors the actual app's Dashboard tab */}
+                <div className="flex flex-col h-full">
+                  {/* App bar */}
+                  <div className="flex items-center justify-between px-4 pt-5 pb-3">
+                    <span className="text-[15px] font-extrabold text-text-primary tracking-tight">
+                      Dashboard
+                    </span>
+                    <div className="flex items-center gap-2 text-text-muted">
+                      <span className="text-[10px] font-medium">Sudipta</span>
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                      </svg>
                     </div>
-                    <span className="text-[11px] font-bold text-text-primary">
-                      PROGNOS
+                  </div>
+
+                  {/* Overview / Insights tabs */}
+                  <div className="mx-4 mb-3 flex rounded-full bg-bg-surface-raised p-1 text-[10px] font-semibold">
+                    <span className="flex-1 text-center py-1 rounded-full bg-primary-500 text-white">
+                      Overview
+                    </span>
+                    <span className="flex-1 text-center py-1 text-text-muted">
+                      Insights
                     </span>
                   </div>
 
-                  {/* Rating card */}
-                  <div className="p-3 rounded-xl bg-bg-surface-raised border border-border-subtle">
-                    <p className="text-[10px] text-text-muted mb-1">CF Rating</p>
-                    <p
-                      className="text-lg font-bold"
-                      style={{ color: "#1E88E5" }}
-                    >
-                      1874
-                    </p>
-                    <p className="text-[10px] text-success-400">
-                      +47 this month
-                    </p>
+                  {/* 2×2 stat grid */}
+                  <div className="mx-4 grid grid-cols-2 gap-2">
+                    <div className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle">
+                      <p className="text-[8px] text-text-muted mb-0.5 flex items-center gap-1">
+                        <span className="text-warning-400">🔥</span> CURRENT STREAK
+                      </p>
+                      <p className="text-base font-bold text-text-primary leading-none">
+                        23 <span className="text-[8px] font-normal text-text-muted">days</span>
+                      </p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle">
+                      <p className="text-[8px] text-text-muted mb-0.5 flex items-center gap-1">
+                        <CheckCircle className="w-2.5 h-2.5 text-success-400" /> TOTAL SOLVED
+                      </p>
+                      <p className="text-base font-bold text-text-primary leading-none">412</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle">
+                      <p className="text-[8px] text-text-muted mb-0.5">CF RATING</p>
+                      <p className="text-base font-bold leading-none" style={{ color: "#1E88E5" }}>
+                        1874 <span className="text-[8px] font-normal text-text-muted">Expert</span>
+                      </p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle">
+                      <p className="text-[8px] text-text-muted mb-0.5">PEAK RATING</p>
+                      <p className="text-base font-bold text-text-primary leading-none">1912</p>
+                    </div>
                   </div>
 
-                  {/* Streak */}
-                  <div className="p-3 rounded-xl bg-bg-surface-raised border border-border-subtle">
-                    <p className="text-[10px] text-text-muted mb-1">
-                      Current Streak
-                    </p>
-                    <p className="text-lg font-bold text-warning-400">
-                      🔥 23
-                    </p>
-                    <p className="text-[10px] text-text-muted">days</p>
+                  {/* Activity heatmap card */}
+                  <div className="mx-4 mt-2.5 p-3 rounded-xl bg-bg-surface border border-border-subtle">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[9px] font-semibold text-text-primary">Activity</span>
+                      <span className="text-[8px] text-text-muted">Last year</span>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {PHONE_HEATMAP.map((intensity, i) => (
+                        <div
+                          key={i}
+                          className="aspect-square rounded-sm"
+                          style={{ background: `rgba(99, 102, 241, ${intensity})` }}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-end gap-1 mt-2 text-[7px] text-text-muted">
+                      <span>Less</span>
+                      {[0.15, 0.4, 0.65, 0.9].map((a) => (
+                        <div key={a} className="w-1.5 h-1.5 rounded-[1px]" style={{ background: `rgba(99,102,241,${a})` }} />
+                      ))}
+                      <span>More</span>
+                    </div>
                   </div>
 
-                  {/* Next contest */}
-                  <div className="p-3 rounded-xl bg-primary-500/10 border border-primary-500/20">
-                    <p className="text-[10px] text-primary-400 mb-1">
-                      Next Contest
-                    </p>
-                    <p className="text-[11px] font-medium text-text-primary">
-                      Div. 2 Round 999
-                    </p>
-                    <p className="text-[11px] text-accent-400 mt-0.5 font-mono">
-                      01:23:45
-                    </p>
-                  </div>
-
-                  {/* Mini heatmap */}
-                  <div className="flex flex-wrap gap-1">
-                    {PHONE_HEATMAP.map((intensity, i) => (
-                      <div
-                        key={i}
-                        className="w-[15px] h-[15px] rounded-sm"
-                        style={{
-                          background: `rgba(99, 102, 241, ${intensity})`,
-                        }}
-                      />
-                    ))}
+                  {/* Bottom nav */}
+                  <div className="mt-auto flex items-center justify-around border-t border-border-subtle bg-bg-surface px-2 py-2.5">
+                    <div className="flex flex-col items-center gap-0.5">
+                      <div className="px-3 py-1 rounded-full bg-primary-500 flex items-center justify-center">
+                        <TrendingUp className="w-3 h-3 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-[7px] text-primary-400 font-medium">Dashboard</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1 text-text-muted">
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                        <rect x="3" y="4" width="18" height="18" rx="2" />
+                        <path d="M16 2v4M8 2v4M3 10h18" />
+                      </svg>
+                      <span className="text-[7px]">Contests</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1 text-text-muted">
+                      <Users className="w-3.5 h-3.5" />
+                      <span className="text-[7px]">Classes</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -682,7 +711,7 @@ export default function LandingPage() {
             {/* Individual solver */}
             <motion.div
               variants={fadeUp}
-              className="p-8 rounded-2xl border border-primary-500/30 bg-primary-500/5"
+              className="flex flex-col p-8 rounded-2xl border border-primary-500/30 bg-primary-500/5"
             >
               <div className="w-10 h-10 rounded-xl bg-primary-500/15 flex items-center justify-center mb-5">
                 <TrendingUp className="w-5 h-5 text-primary-400" />
@@ -694,7 +723,7 @@ export default function LandingPage() {
                 Track your own progress, understand your weaknesses, and climb
                 the rating ladder with data on your side.
               </p>
-              <ul className="space-y-2 mb-7">
+              <ul className="space-y-2 mb-7 mt-1">
                 {[
                   "Submission heatmap",
                   "Rating trajectory",
@@ -712,7 +741,7 @@ export default function LandingPage() {
               </ul>
               <Link
                 href="/login"
-                className="flex items-center justify-center w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-medium hover:bg-primary-600 transition-colors"
+                className="mt-auto flex items-center justify-center w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-medium hover:bg-primary-600 transition-colors"
               >
                 See my dashboard
               </Link>
@@ -721,7 +750,7 @@ export default function LandingPage() {
             {/* Classroom admin */}
             <motion.div
               variants={fadeUp}
-              className="p-8 rounded-2xl border border-accent-500/30 bg-accent-500/5"
+              className="flex flex-col p-8 rounded-2xl border border-accent-500/30 bg-accent-500/5"
             >
               <div className="w-10 h-10 rounded-xl bg-accent-500/15 flex items-center justify-center mb-5">
                 <Users className="w-5 h-5 text-accent-400" />
@@ -733,7 +762,7 @@ export default function LandingPage() {
                 Run a transparent leaderboard for your students or club members
                 and see exactly who needs attention.
               </p>
-              <ul className="space-y-2 mb-7">
+              <ul className="space-y-2 mb-7 mt-1">
                 {[
                   "Live classroom leaderboard",
                   "Cohort analytics",
@@ -751,7 +780,7 @@ export default function LandingPage() {
               </ul>
               <Link
                 href="/login"
-                className="flex items-center justify-center w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-medium hover:bg-primary-600 transition-colors"
+                className="mt-auto flex items-center justify-center w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-medium hover:bg-primary-600 transition-colors"
               >
                 Create a classroom
               </Link>

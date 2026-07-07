@@ -19,7 +19,7 @@ export default function LandingNavbar() {
     <header
       className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
         scrolled
-          ? "bg-bg-base/90 backdrop-blur-md border-b border-border-subtle"
+          ? "bg-bg-base/90 backdrop-blur-md"
           : "bg-transparent"
       }`}
     >
