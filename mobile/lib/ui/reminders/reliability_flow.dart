@@ -8,13 +8,11 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/reminders/reminders_providers.dart';
 import '../../theme/app_colors.dart';
 
-/// First-run reminder opt-in (mobile plan R3). Walks the user through the four
-/// things that make on-device alarms actually fire on Android:
-///   1. notifications permission (13+)
-///   2. exact-alarm grant (12+, not auto-granted on 14+)
-///   3. OEM battery-optimisation whitelist (the silent killer on Xiaomi/Oppo/…)
-///   4. a test notification so they see it works
-/// Returns true if the user completed it (reminders considered on).
+/// First-run reminder opt-in. Kept deliberately simple for non-technical users:
+/// two one-tap system dialogs (notifications + background activity), then an
+/// **honest** test — a real alarm scheduled ~15s out. The user confirms whether
+/// it actually arrived; if not, one tap opens the right settings and they retry.
+/// Returns true once the user confirms reminders work.
 Future<bool> runReminderReliabilityFlow(
   BuildContext context,
   WidgetRef ref,
@@ -35,6 +33,8 @@ Future<bool> runReminderReliabilityFlow(
   return result ?? false;
 }
 
+enum _Phase { intro, verify }
+
 class _ReliabilitySheet extends ConsumerStatefulWidget {
   const _ReliabilitySheet();
 
@@ -42,84 +42,77 @@ class _ReliabilitySheet extends ConsumerStatefulWidget {
   ConsumerState<_ReliabilitySheet> createState() => _ReliabilitySheetState();
 }
 
-enum _StepState { pending, running, ok, warn }
-
 class _ReliabilitySheetState extends ConsumerState<_ReliabilitySheet> {
-  final _steps = <String, _StepState>{
-    'Notifications': _StepState.pending,
-    'Exact alarms': _StepState.pending,
-    'Battery whitelist': _StepState.pending,
-    'Test alert': _StepState.pending,
-  };
-  bool _running = false;
-  bool _done = false;
-  String? _oemHint;
+  _Phase _phase = _Phase.intro;
+  bool _busy = false;
+  String? _fixTip; // shown after "didn't get it"
 
-  Future<void> _run() async {
-    setState(() => _running = true);
+  /// One-tap grants → schedule the honest test → ask the user if it arrived.
+  Future<void> _enable() async {
+    setState(() => _busy = true);
     final scheduler = ref.read(reminderSchedulerProvider);
 
-    setState(() => _steps['Notifications'] = _StepState.running);
-    final notif = await scheduler.requestNotificationsPermission();
-    setState(() => _steps['Notifications'] =
-        notif ? _StepState.ok : _StepState.warn);
+    // 1. Notifications (one-tap system dialog).
+    await scheduler.requestNotificationsPermission();
+    // 2. Background activity (one-tap system dialog). Best-effort.
+    if (Platform.isAndroid) {
+      final status = await Permission.ignoreBatteryOptimizations.status;
+      if (!status.isGranted) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    }
+    // 3. Honest test through the real alarm path.
+    await scheduler.scheduleTest();
 
-    setState(() => _steps['Exact alarms'] = _StepState.running);
-    final exact = await scheduler.requestExactAlarmsPermission();
-    setState(
-        () => _steps['Exact alarms'] = exact ? _StepState.ok : _StepState.warn);
-
-    setState(() => _steps['Battery whitelist'] = _StepState.running);
-    await _batteryStep();
-
-    setState(() => _steps['Test alert'] = _StepState.running);
-    if (notif) await scheduler.showTest();
-    setState(() => _steps['Test alert'] =
-        notif ? _StepState.ok : _StepState.warn);
-
+    if (!mounted) return;
     setState(() {
-      _running = false;
-      _done = true;
+      _busy = false;
+      _phase = _Phase.verify;
     });
   }
 
-  Future<void> _batteryStep() async {
-    if (!Platform.isAndroid) {
-      setState(() => _steps['Battery whitelist'] = _StepState.ok);
-      return;
-    }
-    final info = await DeviceInfoPlugin().androidInfo;
-    final maker = info.manufacturer.toLowerCase();
-    _oemHint = _oemHints[maker];
-
-    final status = await Permission.ignoreBatteryOptimizations.status;
-    if (status.isGranted) {
-      setState(() => _steps['Battery whitelist'] = _StepState.ok);
-      return;
-    }
-    final res = await Permission.ignoreBatteryOptimizations.request();
-    setState(() => _steps['Battery whitelist'] =
-        res.isGranted ? _StepState.ok : _StepState.warn);
+  Future<void> _testAgain() async {
+    setState(() => _busy = true);
+    await ref.read(reminderSchedulerProvider).scheduleTest();
+    if (mounted) setState(() => _busy = false);
   }
 
-  static const _oemHints = <String, String>{
-    'xiaomi':
-        'On Xiaomi/MIUI: Settings → Apps → PROGNOS → Battery saver → No restrictions, and enable Autostart.',
-    'redmi':
-        'On Redmi/MIUI: Settings → Apps → PROGNOS → Battery saver → No restrictions, and enable Autostart.',
-    'poco':
-        'On POCO/MIUI: Settings → Apps → PROGNOS → Battery saver → No restrictions, and enable Autostart.',
-    'oppo':
-        'On Oppo/ColorOS: Settings → Battery → PROGNOS → allow background activity + Auto-launch.',
-    'vivo':
-        'On Vivo/Funtouch: Settings → Battery → Background power consumption → allow PROGNOS.',
-    'realme':
-        'On Realme: Settings → Battery → PROGNOS → allow background activity + Auto-launch.',
-    'huawei':
-        'On Huawei/EMUI: Settings → Apps → PROGNOS → Battery → Manage manually → enable all.',
-    'samsung':
-        'On Samsung: Settings → Battery → Background usage limits → remove PROGNOS from “sleeping apps”.',
-  };
+  /// "Didn't get it" → jump straight to the app's settings + one short,
+  /// device-aware tip. `openAppSettings()` reliably lands on the app page
+  /// (OEM-specific intents are version-fragile), one tap from Battery.
+  Future<void> _fixIt() async {
+    final tip = await _deviceTip();
+    await openAppSettings();
+    if (mounted) setState(() => _fixTip = tip);
+  }
+
+  Future<String> _deviceTip() async {
+    // Do Not Disturb silently blocks reminders on every phone — check it first.
+    const dnd = 'First: make sure Do Not Disturb is OFF (or allow PROGNOS to '
+        'alert through it). Then, on the settings screen: ';
+    if (!Platform.isAndroid) {
+      return '${dnd}allow the app to send notifications. Then tap Test again.';
+    }
+    final maker = (await DeviceInfoPlugin().androidInfo).manufacturer.toLowerCase();
+    final String battery;
+    if (maker.contains('samsung')) {
+      battery = 'open Battery → turn OFF "Put app to sleep" and allow background '
+          'activity for PROGNOS.';
+    } else if (maker.contains('xiaomi') ||
+        maker.contains('redmi') ||
+        maker.contains('poco')) {
+      battery = 'open Battery saver → "No restrictions", and turn on Autostart '
+          'for PROGNOS.';
+    } else if (maker.contains('oppo') ||
+        maker.contains('vivo') ||
+        maker.contains('realme')) {
+      battery = 'open Battery → allow background activity and Auto-launch for '
+          'PROGNOS.';
+    } else {
+      battery = 'open Battery → allow background activity for PROGNOS.';
+    }
+    return '$dnd$battery Then come back and tap Test again.';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,14 +123,20 @@ class _ReliabilitySheetState extends ConsumerState<_ReliabilitySheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.notifications_active_rounded,
-                    color: AppColors.primary400),
-                SizedBox(width: 10),
+                Icon(
+                  _phase == _Phase.verify
+                      ? Icons.hourglass_top_rounded
+                      : Icons.notifications_active_rounded,
+                  color: AppColors.primary400,
+                ),
+                const SizedBox(width: 10),
                 Text(
-                  'Turn on contest reminders',
-                  style: TextStyle(
+                  _phase == _Phase.verify
+                      ? 'Did the test alert arrive?'
+                      : 'Turn on contest reminders',
+                  style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -145,101 +144,103 @@ class _ReliabilitySheetState extends ConsumerState<_ReliabilitySheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Alerts fire on your device before a contest starts — offline, '
-              'screen off. Android needs a few permissions to guarantee they '
-              'arrive on time.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            for (final e in _steps.entries) _StepTile(label: e.key, state: e.value),
-            if (_oemHint != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.warning500.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  _oemHint!,
-                  style: const TextStyle(
-                      color: AppColors.warning400, fontSize: 12.5, height: 1.4),
-                ),
-              ),
-            ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary500,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                onPressed: _running
-                    ? null
-                    : _done
-                        ? () => Navigator.of(context).pop(true)
-                        : _run,
-                child: Text(
-                  _running
-                      ? 'Setting up…'
-                      : _done
-                          ? 'Done'
-                          : 'Enable reminders',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-            if (!_done && !_running)
-              Center(
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Not now',
-                      style: TextStyle(color: AppColors.textMuted)),
-                ),
-              ),
-            if (_done && _hasWarning)
-              Center(
-                child: TextButton(
-                  onPressed: openAppSettings,
-                  child: const Text('Some steps need attention — open settings'),
-                ),
-              ),
+            const SizedBox(height: 12),
+            if (_phase == _Phase.intro) ..._intro() else ..._verify(),
           ],
         ),
       ),
     );
   }
 
-  bool get _hasWarning => _steps.values.contains(_StepState.warn);
-}
+  List<Widget> _intro() => [
+        const Text(
+          'Get a heads-up before every contest starts — even when your phone is '
+          'locked. Just tap Enable and allow the two prompts.',
+          style: TextStyle(
+              color: AppColors.textSecondary, fontSize: 14, height: 1.45),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary500,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            onPressed: _busy ? null : _enable,
+            child: Text(_busy ? 'Setting up…' : 'Enable reminders',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ),
+        Center(
+          child: TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+            child: const Text('Not now',
+                style: TextStyle(color: AppColors.textMuted)),
+          ),
+        ),
+      ];
 
-class _StepTile extends StatelessWidget {
-  const _StepTile({required this.label, required this.state});
-  final String label;
-  final _StepState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final (icon, color) = switch (state) {
-      _StepState.pending => (Icons.radio_button_unchecked, AppColors.textMuted),
-      _StepState.running => (Icons.pending_rounded, AppColors.accent400),
-      _StepState.ok => (Icons.check_circle_rounded, AppColors.success400),
-      _StepState.warn => (Icons.error_rounded, AppColors.warning400),
-    };
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 12),
-          Text(label,
+  List<Widget> _verify() => [
+        const Text(
+          'We just sent a test alert — it should ring in about 15 seconds '
+          '(you can lock your phone). Did you get it?\n\n'
+          'Tip: if Do Not Disturb is on, the alert may be silent.',
+          style: TextStyle(
+              color: AppColors.textSecondary, fontSize: 14, height: 1.45),
+        ),
+        if (_fixTip != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.warning500.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              _fixTip!,
               style: const TextStyle(
-                  color: AppColors.textPrimary, fontSize: 14.5)),
+                  color: AppColors.warning400, fontSize: 13, height: 1.4),
+            ),
+          ),
         ],
-      ),
-    );
-  }
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.success500,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            onPressed: _busy ? null : () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.check_rounded, size: 20),
+            label: const Text("Yes — I'm all set",
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _busy ? null : _fixIt,
+                child: const Text("Didn't get it"),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _testAgain,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Test again'),
+              ),
+            ),
+          ],
+        ),
+      ];
 }

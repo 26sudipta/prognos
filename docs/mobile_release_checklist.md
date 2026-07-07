@@ -60,6 +60,13 @@ The plan's R-criteria that can only be checked on real hardware:
 - Google Sign-In completes (needs the Android OAuth client for `io.prognos.prognos` + your release
   SHA-1 registered in Google Cloud).
 
+## Play Console declarations
+
+- **`USE_EXACT_ALARM`** — declared in the manifest so contest reminders schedule exact alarms with
+  no user prompt. At Play submission you must complete the **"Exact alarm" permission declaration**,
+  affirming that alarms/reminders are a core user-facing feature (they are — the app's headline
+  feature). Apps that don't qualify get rejected; PROGNOS does.
+
 ## OAuth clients (still outstanding from M1)
 
 Create in the **same** Google Cloud project (Credentials → Create OAuth client ID):

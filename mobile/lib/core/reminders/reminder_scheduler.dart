@@ -12,6 +12,12 @@ import 'reminder_reconciler.dart';
 const _kChannelId = 'contest_reminders';
 const _kChannelName = 'Contest Reminders';
 
+/// Monochrome status-bar icon. Referenced by name so the release resource
+/// shrinker can't see it statically — it is force-kept via `res/raw/keep.xml`.
+/// A missing small icon makes the notification receiver throw at fire time and
+/// crash-loops the app, so this must always resolve.
+const _kSmallIcon = 'ic_stat_reminder';
+
 /// Broadcasts the `contestId` payload of a tapped reminder while the app is
 /// running. Top-level so the plugin's static callback can reach it.
 final StreamController<String> _tapController =
@@ -50,7 +56,7 @@ class ReminderScheduler {
 
     // Monochrome status-bar icon — a full-color launcher icon renders as a
     // white square when Android tints the small icon.
-    const android = AndroidInitializationSettings('ic_stat_reminder');
+    const android = AndroidInitializationSettings(_kSmallIcon);
     const ios = DarwinInitializationSettings(
       requestAlertPermission: false, // asked explicitly in the reliability flow
       requestBadgePermission: false,
@@ -97,6 +103,7 @@ class ReminderScheduler {
           importance: Importance.max,
           priority: Priority.high,
           category: AndroidNotificationCategory.reminder,
+          icon: _kSmallIcon,
         ),
         iOS: DarwinNotificationDetails(),
       ),
@@ -124,22 +131,32 @@ class ReminderScheduler {
     return pending.map((p) => p.id).toSet();
   }
 
-  /// Fire a reminder immediately — the "test notification" that closes the
-  /// reliability flow so the user sees it actually works.
-  Future<void> showTest() async {
-    await _fln.show(
-      id: 0,
-      title: 'Reminders are on',
-      body: 'You will be alerted before your contests start.',
+  static const int _kTestId = 424242;
+
+  /// Schedule a test alert ~15s out through the **real** alarm path
+  /// (`zonedSchedule` + `alarmClock`) — the same path real reminders use. An
+  /// *immediate* `show()` would light up green even on a phone that silently
+  /// drops scheduled alarms; this is the honest test that actually proves the
+  /// bell will ring on this device.
+  Future<void> scheduleTest() async {
+    final when = tz.TZDateTime.now(tz.local).add(const Duration(seconds: 15));
+    await _fln.zonedSchedule(
+      id: _kTestId,
+      title: 'Test reminder 🔔',
+      body: 'Your contest reminders will ring like this.',
+      scheduledDate: when,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           _kChannelId,
           _kChannelName,
           importance: Importance.max,
           priority: Priority.high,
+          category: AndroidNotificationCategory.reminder,
+          icon: _kSmallIcon,
         ),
         iOS: DarwinNotificationDetails(),
       ),
+      androidScheduleMode: AndroidScheduleMode.alarmClock,
     );
   }
 
@@ -162,12 +179,13 @@ class ReminderScheduler {
     return true;
   }
 
-  /// Ask for the exact-alarm grant (Android 12+; not auto-granted on 14+).
-  /// No-op / true on iOS.
-  Future<bool> requestExactAlarmsPermission() async {
+  /// Whether exact alarms can be scheduled. With `USE_EXACT_ALARM` declared this
+  /// is true on 13+ without any prompt, so the flow never opens a settings
+  /// screen for it. True on iOS.
+  Future<bool> canScheduleExactAlarms() async {
     final android = _fln.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return true;
-    return await android.requestExactAlarmsPermission() ?? false;
+    return await android.canScheduleExactNotifications() ?? true;
   }
 }

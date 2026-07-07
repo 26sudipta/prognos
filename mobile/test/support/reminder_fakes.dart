@@ -6,6 +6,10 @@ import 'package:prognos/core/reminders/reminder_scheduler.dart';
 class FakeReminderScheduler extends ReminderScheduler {
   final Set<int> pending = {};
 
+  /// Counts calls to [scheduleTest] — lets tests assert the reliability flow
+  /// uses the real scheduled-alarm path (not an immediate show).
+  int scheduleTestCount = 0;
+
   @override
   Future<void> init() async {}
 
@@ -25,11 +29,11 @@ class FakeReminderScheduler extends ReminderScheduler {
   Future<Set<int>> pendingIds() async => {...pending};
 
   @override
-  Future<void> showTest() async {}
+  Future<void> scheduleTest() async => scheduleTestCount++;
 
   @override
   Future<bool> requestNotificationsPermission() async => true;
 
   @override
-  Future<bool> requestExactAlarmsPermission() async => true;
+  Future<bool> canScheduleExactAlarms() async => true;
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Resource-shrinker keep list.
+
+  `ic_stat_reminder` is the notification small icon. It is referenced ONLY by
+  string name from Dart (AndroidInitializationSettings('ic_stat_reminder') and
+  the scheduler's AndroidNotificationDetails.icon), never from XML/manifest, so
+  the release resource shrinker marks it "not reachable" and strips it. When a
+  scheduled reminder then fires, the notification has no valid small icon and the
+  ScheduledNotificationReceiver crashes — and because the alarm is persisted it
+  re-fires on every launch (the app "keeps stopping"). Keeping it here fixes both.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_reminder" />

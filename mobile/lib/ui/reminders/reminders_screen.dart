@@ -65,7 +65,7 @@ class RemindersScreen extends ConsumerWidget {
                 ),
             const SizedBox(height: 24),
             _SectionLabel('DELIVERY'),
-            const _Hint('Re-check notification, exact-alarm and battery settings.'),
+            const _Hint('Send a test alert and check your reminder settings.'),
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () => runReminderReliabilityFlow(context, ref),

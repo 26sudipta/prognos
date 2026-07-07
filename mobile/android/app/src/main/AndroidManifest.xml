@@ -4,6 +4,9 @@
     <!-- Contest reminders (M3): notifications, exact Doze-proof alarms,
          reschedule-after-reboot, and the battery-optimisation whitelist prompt. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- USE_EXACT_ALARM (API 33+) is auto-granted for apps whose core function is
+         alarms/reminders — no user prompt. SCHEDULE_EXACT_ALARM kept for API <33. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.VIBRATE"/>

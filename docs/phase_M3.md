@@ -134,3 +134,77 @@ device (and the iOS 64-cap on a device). The reconcile logic they depend on is w
 ## Next
 **M4 — Dashboard + Insights:** stat strip, Canvas activity heatmap, `fl_chart` rating chart, tags /
 weaknesses / recommendations — cached-first from drift, matching the web for the same account.
+
+## Updates
+
+### Reliability flow simplified for non-technical users
+The original opt-in sheet told users to hunt through OEM battery menus ("remove PROGNOS from
+*sleeping apps*") and asked for the *exact-alarm* system grant — jargon a normal user can't act on.
+Replaced with a two-state sheet (`reliability_flow.dart`):
+1. **Enable** — two one-tap system dialogs (notifications + background activity), then it schedules
+   an **honest test**: a real alarm ~15 s out through the *same* `zonedSchedule` + `alarmClock` path
+   real reminders use (`ReminderScheduler.scheduleTest`). The old "test" called `_fln.show()` — an
+   *immediate* notification that lights up green even on a phone that silently drops scheduled
+   alarms, i.e. a false positive. The new test actually proves the bell will ring on this device.
+2. **Verify** — "Did the test alert arrive? *Yes* / *Didn't get it* / *Test again*", with a
+   Do-Not-Disturb tip (DND silences the channel — the first thing to check).
+
+`USE_EXACT_ALARM` was added to the manifest so exact alarms are auto-granted on API 33+ (no prompt);
+`SCHEDULE_EXACT_ALARM` stays for older APIs. See `docs/mobile_release_checklist.md` for the Play
+Console "Exact alarm" declaration this requires.
+
+### The reminder that never rang — resource shrinker stripped the notification icon
+**Symptom (device):** the test alert never rang, and after it *should* have fired the app showed
+"PROGNOS keeps stopping" — crash-looping on every launch.
+
+**Root cause:** a release-only crash, invisible in debug. The small status-bar icon
+`res/drawable/ic_stat_reminder.xml` is referenced **only by string name** from Dart
+(`AndroidInitializationSettings('ic_stat_reminder')` and `AndroidNotificationDetails.icon`), never
+from any XML/manifest. Release builds run the **resource shrinker**, which sees no static reference
+and removes it — the shrinker report says it outright:
+
+```
+drawable:ic_stat_reminder:2131230879 is not reachable.
+```
+
+At fire time the notification then has no valid small icon and the native path throws, taking down
+the whole process:
+
+```
+FATAL EXCEPTION: ScheduledNotificationReceiver
+IllegalArgumentException: Invalid notification (no valid small icon):
+    Notification(channel=contest_reminders ...)
+```
+
+Because flutter_local_notifications persists the scheduled alarm, it **re-fires on every launch**,
+so the crash loops. One missing resource explained *both* "no bell" and "keeps stopping".
+
+**Fix:** `android/app/src/main/res/raw/keep.xml` tells the shrinker to keep the icon —
+
+```xml
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_reminder" />
+```
+
+and the scheduler now passes `icon: 'ic_stat_reminder'` explicitly on every
+`AndroidNotificationDetails` (self-documenting; the name is also centralised in a `_kSmallIcon`
+const). Rebuilt release now reports `reachable from keep xml file`, and on the physical
+Samsung SM-M105F the test alarm posts a live `StatusBarNotification` with
+`icon=… drawable/ic_stat_reminder` and vibrates — no crash.
+
+**Diagnosis note:** this is the *same lesson* as the earlier workmanager R8 crash above — anything
+reachable only by reflection or by string-name is invisible to R8/the resource shrinker and must be
+kept explicitly. Always verify notification and widget resources against a **release** APK
+(`aapt2 dump resources app-release.apk | grep <name>` and the shrinker's `resources.txt` report),
+never just debug. Also: build sideload/landing APKs **universal** (all ABIs) — this 32-bit device
+(`armeabi-v7a`) can't run an `--target-platform android-arm64` build (`Could not find libflutter.so`).
+
+**Verification (release APK, on device):**
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://prognos-api.onrender.com
+aapt2 dump resources build/app/outputs/flutter-apk/app-release.apk | grep ic_stat_reminder
+#   → resource 0x7f08009f drawable/ic_stat_reminder        (present)
+grep ic_stat_reminder build/app/outputs/mapping/release/resources.txt
+#   → drawable:ic_stat_reminder:… reachable from keep xml file
+# then: Reminders → Check reminder settings → Enable → wait ~15 s → alert rings, no crash.
+```
