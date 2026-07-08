@@ -86,32 +86,35 @@ class _ReliabilitySheetState extends ConsumerState<_ReliabilitySheet> {
     if (mounted) setState(() => _fixTip = tip);
   }
 
+  /// The one thing that actually matters: keep the OS from putting PROGNOS to
+  /// sleep / force-stopping it, which cancels every scheduled alarm. Reminders
+  /// already ring through Do Not Disturb (alarm channel), so this is the tip.
   Future<String> _deviceTip() async {
-    // Do Not Disturb silently blocks reminders on every phone — check it first.
-    const dnd = 'First: make sure Do Not Disturb is OFF (or allow PROGNOS to '
-        'alert through it). Then, on the settings screen: ';
     if (!Platform.isAndroid) {
-      return '${dnd}allow the app to send notifications. Then tap Test again.';
+      return 'On the settings screen, allow the app to send notifications, then '
+          'tap Test again.';
     }
-    final maker = (await DeviceInfoPlugin().androidInfo).manufacturer.toLowerCase();
-    final String battery;
+    final maker =
+        (await DeviceInfoPlugin().androidInfo).manufacturer.toLowerCase();
     if (maker.contains('samsung')) {
-      battery = 'open Battery → turn OFF "Put app to sleep" and allow background '
-          'activity for PROGNOS.';
+      return 'Samsung puts unused apps to sleep and force-stops them, which '
+          'cancels their alarms — the usual reason reminders go quiet. Open '
+          'Battery → Background usage limits → make sure PROGNOS is NOT under '
+          '"Sleeping apps" or "Deep sleeping apps", then add it to "Never '
+          'sleeping apps". Then tap Test again.';
     } else if (maker.contains('xiaomi') ||
         maker.contains('redmi') ||
         maker.contains('poco')) {
-      battery = 'open Battery saver → "No restrictions", and turn on Autostart '
-          'for PROGNOS.';
+      return 'Open Battery saver → set PROGNOS to "No restrictions" and turn on '
+          'Autostart, so the system stops killing its alarms. Then tap Test again.';
     } else if (maker.contains('oppo') ||
         maker.contains('vivo') ||
         maker.contains('realme')) {
-      battery = 'open Battery → allow background activity and Auto-launch for '
-          'PROGNOS.';
-    } else {
-      battery = 'open Battery → allow background activity for PROGNOS.';
+      return 'Open Battery → allow background activity and turn on Auto-launch '
+          'for PROGNOS, so the system stops killing its alarms. Then tap Test again.';
     }
-    return '$dnd$battery Then come back and tap Test again.';
+    return 'Open Battery → allow unrestricted background activity for PROGNOS, so '
+        'the system does not stop it and cancel its alarms. Then tap Test again.';
   }
 
   @override
@@ -185,7 +188,8 @@ class _ReliabilitySheetState extends ConsumerState<_ReliabilitySheet> {
         const Text(
           'We just sent a test alert — it should ring in about 15 seconds '
           '(you can lock your phone). Did you get it?\n\n'
-          'Tip: if Do Not Disturb is on, the alert may be silent.',
+          'It rings even in Do Not Disturb. If it never arrives, tap '
+          '"Didn\'t get it" for the one setting to change.',
           style: TextStyle(
               color: AppColors.textSecondary, fontSize: 14, height: 1.45),
         ),

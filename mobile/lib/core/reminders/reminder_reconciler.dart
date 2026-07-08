@@ -53,6 +53,19 @@ List<DesiredReminder> computeDesiredReminders({
   return desired;
 }
 
+/// Every notification id the current cache could legitimately own — one per
+/// (cached contest, lead). Reconcile may only cancel ids in this set; an alarm
+/// whose contest has aged out of the fetched window is *not* here, so it is left
+/// armed rather than wiped.
+Set<int> managedReminderIds({
+  required List<Contest> contests,
+  required List<int> leadMinutes,
+}) =>
+    {
+      for (final c in contests)
+        for (final lead in leadMinutes) reminderNotifId(c.id, lead),
+    };
+
 /// Apply the iOS pending cap: keep the soonest [kIosPendingCap] by fire time.
 /// Slots free up as contests pass, so this is recomputed on every foreground.
 List<DesiredReminder> capForIos(List<DesiredReminder> desired) {
@@ -79,6 +92,7 @@ class ReminderDiff {
 ReminderDiff diffReminders({
   required List<DesiredReminder> desired,
   required Set<int> pendingIds,
+  required Set<int> managedIds,
 }) {
   final desiredById = {for (final d in desired) d.notifId: d};
 
@@ -86,9 +100,15 @@ ReminderDiff diffReminders({
     for (final d in desired)
       if (!pendingIds.contains(d.notifId)) d,
   ];
+  // Only cancel an alarm we can *prove* is no longer wanted: its contest is
+  // still in the cache ([managedIds]) but dropped out of [desired] (un-starred,
+  // rule disabled, started, or its lead passed). A pending alarm whose contest
+  // has aged out of the fetched window is NOT in managedIds, so it is left armed
+  // — it already holds the correct fire time. Cancelling those was why
+  // out-of-window reminders silently never fired.
   final toCancel = [
     for (final id in pendingIds)
-      if (!desiredById.containsKey(id)) id,
+      if (managedIds.contains(id) && !desiredById.containsKey(id)) id,
   ];
   return ReminderDiff(toSchedule: toSchedule, toCancel: toCancel);
 }

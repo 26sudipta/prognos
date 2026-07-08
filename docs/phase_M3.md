@@ -208,3 +208,48 @@ grep ic_stat_reminder build/app/outputs/mapping/release/resources.txt
 #   → drawable:ic_stat_reminder:… reachable from keep xml file
 # then: Reminders → Check reminder settings → Enable → wait ~15 s → alert rings, no crash.
 ```
+
+### Real reminders never fired — Samsung deep-sleep wipes the alarms (+ two latent bugs)
+
+**Symptom:** the 15-second test rings reliably (screen off, app closed), but real contest
+reminders never fire at contest time — on the fixed build, for both starred and platform reminders.
+
+**Root cause (confirmed on-device):** the reminders *are* scheduled correctly as Doze-exempt
+`setAlarmClock` alarms with correct fire times (timezone/`toUtc()` is instant-preserving, so the
+epoch is right regardless of `tz.local`). The problem is **Samsung One UI "Deep sleep / Sleeping
+apps" force-stops the app when it's idle, and force-stopping an app cancels every AlarmManager alarm
+it owns.** Proven with `adb`:
+
+```
+dumpsys alarm | grep -c walarm.*io.prognos.prognos   → 7   (armed)
+adb shell am force-stop io.prognos.prognos            → (deep-sleep does exactly this)
+dumpsys alarm | grep -c walarm.*io.prognos.prognos   → 0   (all wiped)
+```
+
+Nothing re-arms them until the app is next opened, so a contest that occurs while the app is
+deep-slept gets no reminder. The 15 s test survives only because the app is active when it runs.
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` does **not** exclude an app from One UI deep-sleep.
+
+**Fixes (this change):**
+
+1. **Ring through Do Not Disturb** — the reminder channel now uses `AudioAttributesUsage.alarm`
+   (DND permits alarms), so an alarm that fires during DND is audible instead of silently dropped.
+   Channels are immutable once created, so the id is versioned `contest_reminders` →
+   `contest_reminders_v2` and the old channel is deleted on `init`. Verified on-device: the posted
+   notification's `effectiveNotificationChannel` shows `usage=USAGE_ALARM`.
+2. **Reconcile no longer cancels out-of-window alarms** (latent bug). `reconcile` recomputes the
+   desired set from the 30-day/200-item cache and used to cancel *every* pending alarm not in it —
+   so any starred/enabled contest that aged out of the fetched window had its still-correct alarm
+   wiped. `diffReminders` now takes a `managedIds` set (`managedReminderIds` = every id derivable
+   from the *current* cache) and only cancels ids in it; an alarm whose contest has left the cache
+   is left armed. Unit-tested: "leaves alarms armed for contests that aged out of the cache window."
+3. **Deep-sleep guidance** — the reliability flow's "Didn't get it" tip now leads with the actual
+   fix for Samsung: Battery → Background usage limits → remove PROGNOS from "Sleeping apps" /
+   "Deep sleeping apps" and add it to **"Never sleeping apps"** (with the *why*: sleeping apps get
+   force-stopped, which cancels alarms). Manufacturer-specific copy for Xiaomi/Oppo/Vivo too.
+
+**Honest limitation:** on aggressive OEMs (Samsung especially), no purely on-device local-alarm app
+can guarantee delivery unless the user excludes it from deep-sleep — a WorkManager re-arm doesn't
+help because force-stop cancels its jobs too. The only zero-config guarantee is a **server FCM push**
+at contest time (previously deferred in favor of on-device); revisit if whitelisting proves too much
+to ask of users.

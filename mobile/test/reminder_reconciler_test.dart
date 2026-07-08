@@ -74,24 +74,61 @@ void main() {
   });
 
   group('diffReminders', () {
-    test('schedules the missing and cancels the stale', () {
-      final c = contestStartingIn(90, id: 'star');
+    test('schedules the missing; cancels an in-cache contest no longer wanted', () {
+      final star = contestStartingIn(90, id: 'star');
+      final dropped = contestStartingIn(120, id: 'dropped'); // cached, un-starred
       final desired = computeDesiredReminders(
-        contests: [c],
-        starredIds: {'star'},
+        contests: [star, dropped],
+        starredIds: {'star'}, // 'dropped' is no longer starred
         enabledPlatforms: const {},
         leadMinutes: const [60, 15],
         nowUtc: now,
       );
       final id60 = reminderNotifId('star', 60);
       final id15 = reminderNotifId('star', 15);
-      const staleId = 999999;
+      final droppedId = reminderNotifId('dropped', 60);
+      final managed = managedReminderIds(
+        contests: [star, dropped],
+        leadMinutes: const [60, 15],
+      );
 
-      // OS currently has the 60m one + an unrelated stale one.
-      final diff = diffReminders(desired: desired, pendingIds: {id60, staleId});
+      // OS has star's 60m alarm + a stale alarm for the now-unstarred 'dropped'.
+      final diff = diffReminders(
+        desired: desired,
+        pendingIds: {id60, droppedId},
+        managedIds: managed,
+      );
 
       expect(diff.toSchedule.map((d) => d.notifId), [id15]); // missing
-      expect(diff.toCancel, [staleId]); // no longer desired
+      expect(diff.toCancel, [droppedId]); // cached but no longer wanted
+    });
+
+    test('leaves alarms armed for contests that aged out of the cache window', () {
+      final star = contestStartingIn(90, id: 'star');
+      final desired = computeDesiredReminders(
+        contests: [star],
+        starredIds: {'star'},
+        enabledPlatforms: const {},
+        leadMinutes: const [60, 15],
+        nowUtc: now,
+      );
+      // An alarm for a contest no longer in the cache (aged past the 30-day window).
+      const outOfWindowId = 424243;
+      final managed =
+          managedReminderIds(contests: [star], leadMinutes: const [60, 15]);
+
+      final diff = diffReminders(
+        desired: desired,
+        pendingIds: {
+          reminderNotifId('star', 60),
+          reminderNotifId('star', 15),
+          outOfWindowId,
+        },
+        managedIds: managed,
+      );
+
+      // The out-of-window alarm is preserved, not wiped — this is the fix.
+      expect(diff.toCancel, isEmpty);
     });
   });
 

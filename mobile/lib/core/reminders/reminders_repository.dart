@@ -77,7 +77,13 @@ class RemindersRepository {
     }
 
     final pending = await _scheduler.pendingIds();
-    final diff = diffReminders(desired: desired, pendingIds: pending);
+    final diff = diffReminders(
+      desired: desired,
+      pendingIds: pending,
+      // Only alarms whose contest is still cached may be cancelled — an alarm for
+      // a contest that aged out of the 30-day window stays armed so it still fires.
+      managedIds: managedReminderIds(contests: contests, leadMinutes: leads),
+    );
 
     for (final id in diff.toCancel) {
       await _scheduler.cancel(id);

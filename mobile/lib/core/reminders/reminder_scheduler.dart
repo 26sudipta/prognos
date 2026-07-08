@@ -9,8 +9,12 @@ import 'package:timezone/timezone.dart' as tz;
 import '../contests/contest_format.dart';
 import 'reminder_reconciler.dart';
 
-const _kChannelId = 'contest_reminders';
+// Channel id is versioned: notification channels are immutable once created, so
+// switching the audio usage to "alarm" (rings through Do Not Disturb, no policy
+// permission needed) requires a fresh id. The old channel is deleted on init.
+const _kChannelId = 'contest_reminders_v2';
 const _kChannelName = 'Contest Reminders';
+const _kOldChannelId = 'contest_reminders';
 
 /// Monochrome status-bar icon. Referenced by name so the release resource
 /// shrinker can't see it statically — it is force-kept via `res/raw/keep.xml`.
@@ -67,6 +71,22 @@ class ReminderScheduler {
       onDidReceiveNotificationResponse: _onNotificationTap,
       onDidReceiveBackgroundNotificationResponse: _onNotificationTap,
     );
+
+    // Create the reminder channel explicitly with **alarm** audio usage so it
+    // rings through Do Not Disturb (DND allows alarms), and remove the old
+    // notification-usage channel so users migrate cleanly.
+    final androidImpl = _fln.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImpl != null) {
+      await androidImpl.createNotificationChannel(const AndroidNotificationChannel(
+        _kChannelId,
+        _kChannelName,
+        description: 'Alerts before your starred contests begin',
+        importance: Importance.max,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+      ));
+      await androidImpl.deleteNotificationChannel(channelId: _kOldChannelId);
+    }
     _ready = true;
   }
 
@@ -104,6 +124,7 @@ class ReminderScheduler {
           priority: Priority.high,
           category: AndroidNotificationCategory.reminder,
           icon: _kSmallIcon,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
         ),
         iOS: DarwinNotificationDetails(),
       ),
@@ -153,6 +174,7 @@ class ReminderScheduler {
           priority: Priority.high,
           category: AndroidNotificationCategory.reminder,
           icon: _kSmallIcon,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
         ),
         iOS: DarwinNotificationDetails(),
       ),
