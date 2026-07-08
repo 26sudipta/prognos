@@ -253,3 +253,31 @@ can guarantee delivery unless the user excludes it from deep-sleep — a WorkMan
 help because force-stop cancels its jobs too. The only zero-config guarantee is a **server FCM push**
 at contest time (previously deferred in favor of on-device); revisit if whitelisting proves too much
 to ask of users.
+
+### One-tap "Keep it working" — deep-link straight to the OEM's power screen
+
+The deep-sleep whitelist is the only on-device way to make reminders survive on aggressive OEMs, but
+telling users to *find* Settings → Battery → Background usage limits → Never sleeping apps is a
+scavenger hunt most never finish. So the reliability flow now **opens that screen for them**.
+
+- **Native** (`MainActivity.kt`): a `io.prognos/oem_settings` MethodChannel with `openAutoStart`.
+  Keyed on `Build.MANUFACTURER`, it tries a prioritized list of the vendor's auto-start /
+  power-management components (Xiaomi `AutoStartManagementActivity`, Samsung Device Care
+  `AppPowerManagementActivity` → `BatteryActivity`, Oppo/Vivo/Huawei/OnePlus/Asus equivalents),
+  launching the first that resolves and falling back to the app's own details page. It returns a
+  vendor key so the UI can show matching instructions. Every launch is guarded (`resolveActivity` +
+  try/catch) so a wrong/removed component on some build can never crash — it just tries the next.
+- **Package visibility** (`AndroidManifest.xml`): a `<queries>` block lists those OEM packages, or
+  `resolveActivity()` returns null on Android 11+ and the deep-link would silently degrade to the
+  generic app page.
+- **Flow** (`reliability_flow.dart`): the verify step's second button is now **"Keep it working"**
+  (Android only). One tap opens the exact screen; on return, an amber tip spells out the single
+  toggle for that brand (e.g. Samsung: *App power management → Never sleeping apps → Add → PROGNOS*).
+
+Verified on the Samsung SM-M105F: "Keep it working" opened Device Care's Battery screen
+(`com.samsung.android.lool/…battery.ui.BatteryActivity`, App power management one tap in) and the
+Samsung-specific instruction rendered. `Build.MANUFACTURER`-matched copy covers the other vendors.
+
+**Reality check:** this makes the whitelist a 2-tap chore instead of a hunt — the best achievable for
+**local + offline**. It still needs the user to flip the switch; only a server push removes that, and
+that was deliberately declined to keep reminders working offline.
