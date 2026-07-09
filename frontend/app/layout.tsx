@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/app/_components/auth-provider";
+import { PwaRegister } from "@/app/_components/pwa-register";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -18,6 +19,16 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "PROGNOS — Competitive Programming Analytics",
   description: "Track, analyze, and improve your competitive programming performance.",
+  applicationName: "PROGNOS",
+  appleWebApp: {
+    capable: true,
+    title: "PROGNOS",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#070B14",
 };
 
 export default function RootLayout({
@@ -30,6 +41,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-bg-base text-text-primary">
         <AuthProvider>{children}</AuthProvider>
+        <PwaRegister />
       </body>
     </html>
   );

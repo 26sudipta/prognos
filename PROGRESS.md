@@ -1,7 +1,50 @@
 # PROGRESS.md — Implementation Log
 
 ## Current Status: LIVE & COMPLETE — web app deployed free (Vercel + Render + Neon + cron-job.org).
-**Last Updated:** 2026-06-30 (Go-live done — frontend + backend + DB + cron all working, login verified)
+**Last Updated:** 2026-07-09 (Phase 5.3 — PWA: installable web app, iOS strategy)
+
+---
+
+## Phase 5.3 — PWA: Installable Web App [DONE]
+**Completed:** 2026-07-09
+
+**What was built:**
+- `frontend/app/manifest.ts` — Next.js metadata route serving `/manifest.webmanifest`
+  (standalone display, `start_url /dashboard`, brand colors `#070B14`)
+- `frontend/public/sw.js` — minimal service worker: network-first navigations with inline
+  branded offline fallback; cache-first for `/_next/static/` + `/icons/`; **never touches `/api/`**
+- `frontend/app/_components/pwa-register.tsx` — SW registration, production only
+- `frontend/app/_components/ios-install-hint.tsx` — dismissible Add-to-Home-Screen banner
+  (iOS/iPadOS detection incl. iPad-as-Mac, standalone check, 3s delay, localStorage dismiss)
+- Icon set generated via Pillow (matches favicon: indigo #6366F1 + white trend-line):
+  `public/icons/icon-{192,512}.png`, maskable 512, `app/apple-icon.png` (180, full-bleed)
+- `layout.tsx`: `appleWebApp` metadata + `themeColor` viewport; landing page copy updated
+
+**Decision:** PWA chosen as the iOS strategy — user won't pay Apple's $99/yr; iOS blocks
+sideloading entirely. Android keeps the native APK (alarms + widget); iPhone users install
+the web app from Safari. Contest reminders stay Android-only until Web Push (iOS 16.4+) is
+added later (needs push-subscriptions table + cron send worker).
+
+**Verified:** `npm run build` clean; prod server smoke test — manifest JSON, `<link rel="manifest">`,
+theme-color + apple-* meta tags in head, `sw.js` and icons all 200. See `docs/phase_5_3.md`.
+
+---
+
+## Open-Sourcing & Licensing [DONE]
+**Completed:** 2026-07-08
+
+- `README.md` — professional public-facing readme: hero + badges, features, Mermaid
+  architecture diagram, key-decisions table, tech stack, quickstart, structure, roadmap.
+  All numbers real (127 tests, ~2,020 req/s p95 11 ms from the actual `ab` load test).
+- `LICENSE` — **AGPL-3.0** (official text via GitHub licenses API).
+- `CONTRIBUTING.md` — contributor workflow + code style + **CLA clause** granting the
+  maintainer the right to relicense contributions.
+
+**Decision:** AGPL-3.0 over MIT/BUSL — user wants open contributions but no commercial
+reuse by third parties, with the option to later form an org/startup and dual-license.
+AGPL is contributor-friendly ("true open source") while commercially radioactive to
+copycats; the CLA keeps future relicensing possible without chasing past contributors.
+Pushed to `main` in commit `b32013b`.
 
 ---
 

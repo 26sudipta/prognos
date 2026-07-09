@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import LandingNavbar from "@/app/_components/landing-navbar";
 import HandlePreviewWidget from "@/app/_components/handle-preview-widget";
+import { IosInstallHint } from "@/app/_components/ios-install-hint";
 
 // Fixed heatmap pattern for the phone mockup (avoids hydration mismatch)
 const PHONE_HEATMAP = [
@@ -306,7 +307,8 @@ export default function LandingPage() {
               <p className="text-text-secondary mb-8 leading-relaxed">
                 Contest alarms, quick-view dashboard, and offline access —
                 practice tracking that lives in your pocket, everywhere you
-                compete. Download the Android beta now; iOS is on the way.
+                compete. Download the Android beta now — on iPhone, install
+                the web app straight from Safari: Share → Add to Home Screen.
               </p>
 
               <ul className="space-y-3 mb-10">
@@ -851,6 +853,8 @@ export default function LandingPage() {
           </p>
         </div>
       </footer>
+
+      <IosInstallHint />
     </div>
   );
 }
