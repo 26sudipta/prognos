@@ -153,7 +153,7 @@ export async function syncClassroom(token: string, id: string): Promise<Classroo
     const secs = body?.detail?.retry_after_seconds;
     const mins = secs ? Math.ceil(secs / 60) : null;
     throw new Error(
-      mins ? `Recently synced — try again in ~${mins} min.` : "Recently synced — try again shortly.",
+      mins ? `Recently synced. Try again in ~${mins} min.` : "Recently synced. Try again shortly.",
     );
   }
   if (!res.ok) throw new Error("Failed to start classroom sync");

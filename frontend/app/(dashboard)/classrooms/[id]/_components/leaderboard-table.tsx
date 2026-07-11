@@ -22,7 +22,7 @@ export function LeaderboardTable({ entries }: Props) {
   if (entries.length === 0) {
     return (
       <div className="text-center py-16 text-text-muted text-sm">
-        Leaderboard is being computed — check back soon.
+        Leaderboard is being computed. Check back soon.
       </div>
     );
   }

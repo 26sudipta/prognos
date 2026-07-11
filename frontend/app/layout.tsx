@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PROGNOS — Competitive Programming Analytics",
+  title: "PROGNOS | Competitive Programming Analytics",
   description: "Track, analyze, and improve your competitive programming performance.",
   applicationName: "PROGNOS",
   appleWebApp: {

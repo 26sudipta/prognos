@@ -61,7 +61,7 @@ export default function HandlePreviewWidget() {
         setError("Handle not found on Codeforces.");
       }
     } catch {
-      setError("Could not reach Codeforces — please try again.");
+      setError("Could not reach Codeforces. Please try again.");
     } finally {
       setLoading(false);
     }

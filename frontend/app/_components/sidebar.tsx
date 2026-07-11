@@ -61,9 +61,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
         const mins = Math.max(1, Math.ceil((err.retryAfterSeconds ?? 0) / 60));
-        setSyncNote(`Synced recently — try again in ${mins}m`);
+        setSyncNote(`Synced recently. Try again in ${mins}m`);
       } else {
-        setSyncNote("Couldn't start sync — try again");
+        setSyncNote("Couldn't start sync. Try again");
       }
     } finally {
       setSyncing(false);

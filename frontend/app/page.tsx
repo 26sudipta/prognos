@@ -95,9 +95,9 @@ export default function LandingPage() {
             </h1>
 
             <p className="text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto mb-10">
-              PROGNOS turns your Codeforces history into a living dashboard —
-              streak tracking, tag analytics, and classroom leaderboards for CP
-              teams.
+              PROGNOS turns your Codeforces history into a living dashboard
+              with streak tracking, tag analytics, and classroom leaderboards
+              for CP teams.
             </p>
           </motion.div>
 
@@ -135,7 +135,7 @@ export default function LandingPage() {
               Everything your practice needs
             </h2>
             <p className="text-text-secondary max-w-xl mx-auto">
-              Aggregated from your Codeforces history automatically — no manual
+              Aggregated from your Codeforces history automatically. No manual
               input, no spreadsheets.
             </p>
           </motion.div>
@@ -236,7 +236,7 @@ export default function LandingPage() {
               {
                 icon: PieChart,
                 title: "Cohort Analytics",
-                desc: "See who is active, who is falling behind, and which tags the whole team needs to drill — in one teacher dashboard.",
+                desc: "See who is active, who is falling behind, and which tags the whole team needs to drill, all in one teacher dashboard.",
                 color: "#818CF8",
               },
             ].map((feature) => (
@@ -299,22 +299,22 @@ export default function LandingPage() {
               </span>
 
               <h2 className="text-3xl sm:text-4xl font-bold text-text-primary mb-4 leading-tight">
-                PROGNOS on the Go{" "}
+                PROGNOS on the Go,{" "}
                 <span className="text-text-secondary">
-                  — Now on Android
+                  now on Android
                 </span>
               </h2>
               <p className="text-text-secondary mb-8 leading-relaxed">
-                Contest alarms, quick-view dashboard, and offline access —
-                practice tracking that lives in your pocket, everywhere you
-                compete. Download the Android beta now — on iPhone, install
+                Contest alarms, quick-view dashboard, and offline access.
+                Practice tracking that lives in your pocket, everywhere you
+                compete. Download the Android beta now, or on iPhone install
                 the web app straight from Safari: Share → Add to Home Screen.
               </p>
 
               <ul className="space-y-3 mb-10">
                 {[
                   "Contest discovery with one-tap alarms",
-                  "Quick-view dashboard — rating, streak, next contest",
+                  "Quick-view dashboard: rating, streak, next contest",
                   "Offline access to your practice history",
                 ].map((item) => (
                   <li
@@ -342,7 +342,7 @@ export default function LandingPage() {
                 </span>
               </a>
               <p className="text-xs text-text-muted mb-6">
-                A beta build — you may need to allow installs from your browser
+                A beta build. You may need to allow installs from your browser
                 in Android settings.
               </p>
 
@@ -573,7 +573,7 @@ export default function LandingPage() {
                   {
                     icon: Zap,
                     title: "Weakness-First Recommendations",
-                    desc: "AI surfaces the exact tag gaps holding back your rating — no guessing needed.",
+                    desc: "AI surfaces the exact tag gaps holding back your rating. No guessing needed.",
                     color: "#22D3EE",
                   },
                   {

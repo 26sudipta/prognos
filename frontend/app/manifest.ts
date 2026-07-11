@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "PROGNOS — Competitive Programming Analytics",
+    name: "PROGNOS | Competitive Programming Analytics",
     short_name: "PROGNOS",
     description:
       "Track, analyze, and improve your competitive programming performance.",

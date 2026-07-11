@@ -384,7 +384,7 @@ export default function HandlesPage() {
               setState({ status: "FAILED", handleId, handle, token, expiresAt, attemptsRemaining: 0 });
             } else {
               setConfirmError(
-                "Couldn't reach Codeforces just now — your token is still valid. Wait a moment and verify again.",
+                "Couldn't reach Codeforces just now. Your token is still valid, wait a moment and verify again.",
               );
             }
             return;
@@ -639,7 +639,7 @@ export default function HandlesPage() {
                         {[
                           "We check the handle exists on Codeforces.",
                           "You paste a short token into the Organization field at codeforces.com/settings/social. Remove it after verification.",
-                          "We read it back — this proves you own the account.",
+                          "We read it back to prove you own the account.",
                         ].map((step, i) => (
                           <li key={i} className="flex items-start gap-2.5 text-xs text-text-muted">
                             <span className="w-4 h-4 rounded-full bg-bg-surface-raised border border-border-subtle flex items-center justify-center text-[10px] font-semibold text-text-disabled shrink-0 mt-0.5">
@@ -711,7 +711,7 @@ export default function HandlesPage() {
                     {/* "Open new tab" hint */}
                     <div className="flex items-center gap-2 mb-4 text-xs text-warning-400">
                       <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                      Open a new tab — keep this page open.
+                      Open a new tab and keep this page open.
                     </div>
 
                     {/* Token */}
@@ -754,7 +754,7 @@ export default function HandlesPage() {
                           </span>
                         </div>
                         <p className="text-xs text-text-muted">
-                          Too many failed attempts. Your token is still valid — try again after the cooldown.
+                          Too many failed attempts. Your token is still valid, try again after the cooldown.
                         </p>
                       </motion.div>
                     )}
@@ -809,7 +809,7 @@ export default function HandlesPage() {
                               <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary-400" />
                               {verifyProgress.phase === "checking"
                                 ? "Checking Codeforces…"
-                                : `Waiting for Codeforces — next check in ${verifyProgress.secondsToNext}s`}
+                                : `Waiting for Codeforces, next check in ${verifyProgress.secondsToNext}s`}
                             </span>
                             <span className="font-mono text-lg font-semibold text-primary-400 tabular-nums">
                               {verifyProgress.pct}%
@@ -824,7 +824,7 @@ export default function HandlesPage() {
                           </div>
                           <p className="text-xs text-text-muted mt-2">
                             Attempt {verifyProgress.attempt} of {verifyProgress.total} · CF can take a minute to
-                            update — hang tight, we&apos;ll keep checking.
+                            update. Hang tight, we&apos;ll keep checking.
                           </p>
                         </div>
                         <button
@@ -844,7 +844,7 @@ export default function HandlesPage() {
                               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-primary-500 text-white hover:bg-primary-400 active:scale-[0.98] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                             >
                               <Shield className="w-4 h-4" />
-                              I&apos;ve done it — Verify
+                              I&apos;ve done it, verify now
                             </button>
                             {tokenExpired && (
                               <p className="text-xs text-warning-400 text-center">

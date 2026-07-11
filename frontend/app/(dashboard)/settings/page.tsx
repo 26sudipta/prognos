@@ -62,7 +62,7 @@ export default function SettingsPage() {
     } catch (e) {
       setDeleteErr(
         e instanceof UserApiError && e.status === 409
-          ? "You still own a classroom — delete it first, then you can delete your account."
+          ? "You still own a classroom. Delete it first, then you can delete your account."
           : e instanceof Error
           ? e.message
           : "Couldn't delete your account",
@@ -123,7 +123,7 @@ export default function SettingsPage() {
             </p>
           )}
           <p className="mt-2 text-xs text-text-muted">
-            Email and Codeforces handle can&apos;t be changed here — manage your handle on the{" "}
+            Email and Codeforces handle can&apos;t be changed here. Manage your handle on the{" "}
             <a href="/handles" className="text-primary-400 hover:text-primary-300">Handles</a> page.
           </p>
         </section>

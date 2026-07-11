@@ -85,7 +85,7 @@ export function CohortAnalyticsPanel({ cohort }: Props) {
       <div className="rounded-xl bg-bg-surface border border-border-subtle overflow-hidden">
         <div className="px-4 py-3 border-b border-border-subtle">
           <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide">
-            Attendance — Last 30 Days
+            Attendance (Last 30 Days)
           </h4>
         </div>
         {cohort.student_attendance.length === 0 ? (
