@@ -1,6 +1,6 @@
 <div align="center">
 
-![PROGNOS — open source, live at prognos-chi.vercel.app](docs/slide_close.jpg)
+# PROGNOS
 
 ### The Strava for Competitive Programming
 
@@ -15,6 +15,8 @@
 ![Flutter](https://img.shields.io/badge/Flutter-Android%20%7C%20iOS-02569B?logo=flutter&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-127%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+
+![PROGNOS — open source, live at prognos-chi.vercel.app](docs/slide_close.jpg)
 
 </div>
 
