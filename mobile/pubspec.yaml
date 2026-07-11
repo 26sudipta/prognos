@@ -86,15 +86,14 @@ flutter_launcher_icons:
 # branded (no white flash) and consistent with the web login. Regenerate:
 #   dart run flutter_native_splash:create
 flutter_native_splash:
+  # Dark background only — NO logo on the native splash. This avoids the jarring
+  # "big native logo → small in-app logo" jump; the only logo the user sees is
+  # the small dim/undim one rendered by the app (AnimatedAppLogo).
   color: "#070B14"
-  image: assets/icon/splash_logo.png
   color_dark: "#070B14"
-  image_dark: assets/icon/splash_logo.png
   android_12:
     color: "#070B14"
-    image: assets/icon/splash_logo.png
     color_dark: "#070B14"
-    image_dark: assets/icon/splash_logo.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

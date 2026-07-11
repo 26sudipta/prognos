@@ -33,7 +33,7 @@ class _Splash extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: AppColors.bgBase,
-      body: Center(child: AnimatedAppLogo(size: 72)),
+      body: Center(child: AnimatedAppLogo(size: 56)),
     );
   }
 }

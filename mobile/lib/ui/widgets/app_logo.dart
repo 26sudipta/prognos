@@ -28,10 +28,11 @@ class AppLogo extends StatelessWidget {
   }
 }
 
-/// The logo with a gentle breathing pulse — the launch/loading animation shown
-/// while the session is restored. Respects reduced-motion.
+/// The logo with a gentle dim/undim (opacity breathing) — the launch/loading
+/// animation shown while the session is restored. Fixed size, no scaling.
+/// Respects reduced-motion.
 class AnimatedAppLogo extends StatefulWidget {
-  const AnimatedAppLogo({super.key, this.size = 72});
+  const AnimatedAppLogo({super.key, this.size = 56});
   final double size;
 
   @override
@@ -69,27 +70,9 @@ class _AnimatedAppLogoState extends State<AnimatedAppLogo>
     final logo = AppLogo(size: widget.size);
     if (reduceMotion) return logo;
 
-    final scale = Tween<double>(begin: 0.92, end: 1.0)
+    // Gentle dim ↔ undim only — no size change.
+    final opacity = Tween<double>(begin: 0.45, end: 1.0)
         .animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut));
-    final glow = Tween<double>(begin: 0.15, end: 0.45)
-        .animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut));
-
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, child) => Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(widget.size * 0.26),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary500.withValues(alpha: glow.value),
-              blurRadius: 32,
-              spreadRadius: 2,
-            ),
-          ],
-        ),
-        child: Transform.scale(scale: scale.value, child: child),
-      ),
-      child: logo,
-    );
+    return FadeTransition(opacity: opacity, child: logo);
   }
 }
