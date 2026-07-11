@@ -1,6 +1,6 @@
 <div align="center">
 
-# PROGNOS
+![PROGNOS — open source, live at prognos-chi.vercel.app](docs/slide_close.jpg)
 
 ### The Strava for Competitive Programming
 
@@ -178,8 +178,13 @@ prognos/
 - [x] **V1.0** — Google auth, handle verification, personal dashboard, classrooms, contest discovery
 - [x] **V1.1** — skill-gap engine, insights, on-demand sync
 - [x] **V2.0** — Flutter mobile app: offline cache, reliable reminders, home-screen widget
+- [x] **V2.1** — PWA: installable web app on iOS/Android/desktop, offline shell
 - [ ] **V3.0** — AI coaching layer: LLM-generated practice plans from pre-formatted performance vectors
 - [ ] **V3.x** — LeetCode & AtCoder connectors, cross-platform tag taxonomy
+
+<div align="center">
+  <img src="docs/slide_ai.jpg" alt="Next up: AI Coaching — personalized practice guidance" width="640">
+</div>
 
 ## 📖 Documentation
 
