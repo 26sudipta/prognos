@@ -1,7 +1,32 @@
 # PROGRESS.md — Implementation Log
 
 ## Current Status: LIVE & COMPLETE — web app deployed free (Vercel + Render + Neon + cron-job.org).
-**Last Updated:** 2026-07-09 (Phase 5.3 — PWA: installable web app, iOS strategy)
+**Last Updated:** 2026-07-13 (Phase 5.4 — CI: GitHub Actions quality gates)
+
+---
+
+## Phase 5.4 — Continuous Integration (GitHub Actions) [DONE]
+**Completed:** 2026-07-13
+
+**What was built:**
+- `.github/workflows/backend-ci.yml` — uv sync → alembic upgrade head → pytest against a
+  `postgres:16` service container (doubles as a fresh-DB migration gate); dummy env for
+  pydantic-settings required fields; no Redis service (only untested workers use it, lazily)
+- `.github/workflows/frontend-ci.yml` — Node 22, `npm ci` + `next build`
+- `.github/workflows/mobile-ci.yml` — Flutter stable, `flutter analyze` + `flutter test`
+- All three path-filtered (`backend/**` etc. + own workflow file) with concurrency
+  cancellation; actions pinned to immutable full-version tags (setup-uv v8+ deleted moving
+  tags; verified via GitHub releases API: checkout v7.0.0, setup-node v6.4.0,
+  setup-uv v8.3.2, flutter-action v2.23.0)
+- README: static "tests 127 passing" badge → 3 live workflow badges
+- `ruff` pinned as backend dev dependency (for the future lint-cleanup pass)
+
+**Decision:** no lint gates yet — `ruff check` has 190 pre-existing violations and
+`npm run lint` 3 errors (react-hooks correctness). Gates cover only what is green today
+(tests + builds); permanently-red gates get ignored. Marked in workflow comments.
+
+**Verified locally before push:** backend 149 passed (7m45s), frontend build clean,
+mobile analyze 0 issues + 57 tests passed. See `docs/phase_5_4.md`.
 
 ---
 

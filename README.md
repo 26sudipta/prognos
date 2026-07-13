@@ -13,7 +13,9 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-4169E1?logo=postgresql&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-Android%20%7C%20iOS-02569B?logo=flutter&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-127%20passing-brightgreen)
+[![Backend CI](https://github.com/26sudipta/prognos/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/26sudipta/prognos/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/26sudipta/prognos/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/26sudipta/prognos/actions/workflows/frontend-ci.yml)
+[![Mobile CI](https://github.com/26sudipta/prognos/actions/workflows/mobile-ci.yml/badge.svg)](https://github.com/26sudipta/prognos/actions/workflows/mobile-ci.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 ![PROGNOS — open source, live at prognos-chi.vercel.app](docs/slide_close.jpg)

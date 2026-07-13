@@ -1,0 +1,63 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: prognos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/prognos_test
+      GOOGLE_CLIENT_ID: ci-dummy
+      GOOGLE_CLIENT_SECRET: ci-dummy
+      GOOGLE_REDIRECT_URI: http://localhost:8000/api/v1/auth/google/callback
+      JWT_SECRET: ci-dummy-jwt-secret-0000000000000000000000000000000000000000
+      JWT_REFRESH_SECRET: ci-dummy-refresh-secret-00000000000000000000000000000000
+      ENVIRONMENT: test
+
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --locked
+
+      # No ruff gate yet: 190 pre-existing violations. Add `uv run ruff check .`
+      # here after the lint-cleanup pass.
+      - run: uv run alembic upgrade head
+
+      - run: uv run pytest -q
