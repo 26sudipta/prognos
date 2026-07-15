@@ -17,46 +17,45 @@
 [![Frontend CI](https://github.com/26sudipta/prognos/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/26sudipta/prognos/actions/workflows/frontend-ci.yml)
 [![Mobile CI](https://github.com/26sudipta/prognos/actions/workflows/mobile-ci.yml/badge.svg)](https://github.com/26sudipta/prognos/actions/workflows/mobile-ci.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
-
-![PROGNOS — open source, live at prognos-chi.vercel.app](docs/slide_close.jpg)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/26sudipta)
 
 </div>
 
 ---
 
-Competitive programmers practice across scattered platforms, track streaks in their heads, and find out about contests after they start. **PROGNOS** fixes that: it pulls your Codeforces activity into one unified analytics dashboard, detects the topics you're weak in, reminds you before every contest — and puts you on a transparent leaderboard with your classmates, because nothing drives consistency like seeing your peer's 40-day streak.
+Competitive programmers practice across scattered platforms, track streaks in their heads, and find out about contests after they start. **PROGNOS** fixes that: it pulls your Codeforces activity into one unified analytics dashboard, detects the topics you're weak in, reminds you before every contest, and puts you on a transparent leaderboard with your classmates, because nothing drives consistency like seeing your peer's 40-day streak.
 
 ## ✨ Features
 
 ### 📊 Personal Analytics
-- **Unified dashboard** — rating graph, verdict breakdown, tag coverage, and a GitHub-style activity heatmap, all pre-computed server-side for instant loads.
-- **Streak tracking** — current and longest daily solve streaks.
-- **Skill-gap detection** — a rule-based weakness engine that flags under-practiced tags relative to your rating band and recommends what to solve next.
-- **Insights page** — deeper trends: difficulty distribution, solve velocity, and progress over time.
+- **Unified dashboard:** rating graph, verdict breakdown, tag coverage, and a GitHub-style activity heatmap, all pre-computed server-side for instant loads.
+- **Streak tracking:** current and longest daily solve streaks.
+- **Skill-gap detection:** a rule-based weakness engine that flags under-practiced tags relative to your rating band and recommends what to solve next.
+- **Insights page:** deeper trends like difficulty distribution, solve velocity, and progress over time.
 
 ### 🏆 Classrooms (Social Accountability)
-- **Multi-tenant classrooms** — any verified user can create a classroom and invite peers with a join code.
-- **Transparent leaderboards** — ranked by rating, streak, and weekly solves; recomputed by background workers, never on request.
-- **Cohort analytics for mentors** — teachers see aggregate tag coverage and activity across the whole class.
-- **Per-classroom roles** — be a teacher in one classroom and a student in another; roles live on the membership, not the user.
+- **Multi-tenant classrooms:** any verified user can create a classroom and invite peers with a join code.
+- **Transparent leaderboards:** ranked by rating, streak, and weekly solves; recomputed by background workers, never on request.
+- **Cohort analytics for mentors:** teachers see aggregate tag coverage and activity across the whole class.
+- **Per-classroom roles:** be a teacher in one classroom and a student in another; roles live on the membership, not the user.
 
 ### 🗓️ Contest Discovery & Reminders
-- **All judges, one calendar** — upcoming contests from Codeforces, AtCoder, LeetCode and more via the CLIST API.
-- **Reliable mobile reminders** — exact alarms that survive Do-Not-Disturb, device reboots, and OEM battery killers, with a one-tap deep link to whitelist the app.
+- **All judges, one calendar:** upcoming contests from Codeforces, AtCoder, LeetCode and more via the CLIST API.
+- **Reliable mobile reminders:** exact alarms that survive Do-Not-Disturb, device reboots, and OEM battery killers, with a one-tap deep link to whitelist the app.
 
 ### 📱 Mobile App (Flutter)
 - Full dashboard, insights, classrooms, and contest calendar on Android and iOS.
 - **Offline-first** contest cache and a **home-screen widget** for your next contest.
-- On-device alarm scheduling — reminders fire even with no network.
+- On-device alarm scheduling, so reminders fire even with no network.
 
 ### 🔐 Secure by Design
 - Google OAuth 2.0 + short-lived JWT access tokens with rotating, hashed refresh tokens.
-- **Handle ownership verification** — prove a Codeforces handle is yours by setting a one-time token in your profile; no passwords ever touch PROGNOS.
+- **Handle ownership verification:** prove a Codeforces handle is yours by setting a one-time token in your profile; no passwords ever touch PROGNOS.
 - Server-side data sync only: clients can *trigger* a sync but never *write* stats, so leaderboards can't be forged.
 
 ## 🏗️ Architecture
 
-**API-first, compute-on-write.** One FastAPI backend serves both the web and mobile apps. All heavy lifting (fetching submissions, computing streaks, ranking leaderboards) happens in background workers; frontends only read pre-computed results. That's why every page load is a handful of indexed queries — measured at **~2,000 req/s with p95 latency of 11 ms** under load (`ab -n 2000 -c 20`).
+**API-first, compute-on-write.** One FastAPI backend serves both the web and mobile apps. All heavy lifting (fetching submissions, computing streaks, ranking leaderboards) happens in background workers; frontends only read pre-computed results. That's why every page load is a handful of indexed queries, measured at **~2,000 req/s with p95 latency of 11 ms** under load (`ab -n 2000 -c 20`).
 
 ```mermaid
 graph LR
@@ -93,9 +92,9 @@ graph LR
 
 | Decision | Why |
 |---|---|
-| Clients trigger sync, server fetches | Leaderboard integrity — append-only client facts can't erase forgeries |
+| Clients trigger sync, server fetches | Leaderboard integrity: append-only client facts can't erase forgeries |
 | Pre-compute on write, dumb reads | Sub-15 ms p95 responses; frontends never aggregate |
-| Vercel rewrite proxy for the API | Refresh cookie stays first-party — works in Safari/iOS |
+| Vercel rewrite proxy for the API | Refresh cookie stays first-party, so it works in Safari/iOS |
 | Per-classroom roles | One user can mentor one cohort and compete in another |
 | UUID PKs + TIMESTAMPTZ everywhere | Safe merges, no timezone bugs; clients localize |
 
@@ -110,7 +109,7 @@ graph LR
 | **Data** | PostgreSQL 15+ (Neon in production) |
 | **Workers** | Celery + Redis (dev) · secured cron endpoints (production free tier) |
 | **Infra** | Vercel (web) · Render Docker (API, Singapore) · cron-job.org (scheduling) |
-| **Tooling** | `uv` (Python packaging) · pytest (127 tests) · GitHub |
+| **Tooling** | `uv` (Python packaging) · pytest (149 backend tests) · Flutter (57 mobile tests) |
 
 ## 🚀 Getting Started
 
@@ -153,14 +152,14 @@ flutter run
 
 ```bash
 curl http://localhost:8000/api/v1/health       # {"status":"ok","service":"prognos-api"}
-cd backend && .venv/bin/python -m pytest       # 127 passed
+cd backend && .venv/bin/python -m pytest       # 149 passed
 ```
 
 ## 📁 Project Structure
 
 ```
 prognos/
-├── backend/            # FastAPI app — routes, models, workers, migrations
+├── backend/            # FastAPI app: routes, models, workers, migrations
 │   ├── app/
 │   │   ├── api/        # REST endpoints (auth, users, analytics, contests, classrooms)
 │   │   ├── core/       # config, database, security (JWT)
@@ -169,44 +168,83 @@ prognos/
 │   │   ├── services/   # business logic
 │   │   └── workers/    # sync + leaderboard computation
 │   ├── alembic/        # database migrations
-│   └── tests/          # 127 pytest tests (unit + integration)
+│   └── tests/          # 149 pytest tests (unit + integration)
 ├── frontend/           # Next.js 16 web app (App Router, Tailwind, Recharts)
 ├── mobile/             # Flutter app (Android + iOS)
-├── docs/               # 35+ phase docs — every decision explained
+├── docs/               # 35+ phase docs, every decision explained
 ├── requirement.md      # master requirements document
 └── render.yaml         # production infrastructure blueprint
 ```
 
 ## 🗺️ Roadmap
 
-- [x] **V1.0** — Google auth, handle verification, personal dashboard, classrooms, contest discovery
-- [x] **V1.1** — skill-gap engine, insights, on-demand sync
-- [x] **V2.0** — Flutter mobile app: offline cache, reliable reminders, home-screen widget
-- [x] **V2.1** — PWA: installable web app on iOS/Android/desktop, offline shell
-- [ ] **V3.0** — AI coaching layer: LLM-generated practice plans from pre-formatted performance vectors
-- [ ] **V3.x** — LeetCode & AtCoder connectors, cross-platform tag taxonomy
+- [x] **V1.0:** Google auth, handle verification, personal dashboard, classrooms, contest discovery
+- [x] **V1.1:** skill-gap engine, insights, on-demand sync
+- [x] **V2.0:** Flutter mobile app with offline cache, reliable reminders, home-screen widget
+- [x] **V2.1:** PWA, an installable web app on iOS/Android/desktop with an offline shell
+- [ ] **V3.0:** AI coaching layer, LLM-generated practice plans from pre-formatted performance vectors
+- [ ] **V3.x:** LeetCode & AtCoder connectors, cross-platform tag taxonomy
 
 <div align="center">
-  <img src="docs/slide_ai.jpg" alt="Next up: AI Coaching — personalized practice guidance" width="640">
+  <img src="docs/slide_ai.jpg" alt="Next up: AI Coaching, personalized practice guidance" width="640">
 </div>
 
 ## 📖 Documentation
 
-Every phase of this project is documented in [`docs/`](docs/) — not just *what* was built, but *why* each decision was made: schema trade-offs, auth flow design, sync strategy, free-tier deployment topology, and QA audits. Start with [`docs/phase_1_1.md`](docs/phase_1_1.md) or the [deployment plan](docs/deployment_golive_plan.md).
+Every phase of this project is documented in [`docs/`](docs/), not just *what* was built, but *why* each decision was made: schema trade-offs, auth flow design, sync strategy, free-tier deployment topology, and QA audits. Start with [`docs/phase_1_1.md`](docs/phase_1_1.md) or the [deployment plan](docs/deployment_golive_plan.md).
 
 ## 🤝 Contributing
 
-Contributions are welcome — bug fixes, features, docs, ideas. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, code style, and the contributor license agreement, then grab an open issue or propose your own.
+Contributions are welcome: bug fixes, features, docs, ideas. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, code style, and the contributor license agreement, then grab an open issue or propose your own.
+
+## ❤️ Support PROGNOS
+
+PROGNOS is **live for free right now** on generous free tiers, but "free" comes with a catch.
+The backend falls asleep after 15 minutes of inactivity, so the first visitor after a quiet
+spell waits about 50 seconds for it to wake up. Sponsorship keeps the server always on, pays
+for a proper domain, and covers the store fees that put PROGNOS on every phone.
+
+**Monthly goal: $60.** Here is exactly where it goes:
+
+| Where it goes | Why | ~Cost/mo |
+|---|---|---|
+| Always-on backend (Render) | Kills the ~50s cold start, the biggest single win | $25 |
+| Managed Postgres (Neon) | Growth beyond the free compute and storage tier | $19 |
+| Apple Developer Program ($99/yr) | Unlocks a real iOS app instead of the PWA workaround | ~$8 |
+| Custom domain | A real URL instead of `*.vercel.app` | ~$1 |
+| Monitoring, email, buffer | Error tracking, contest emails, headroom | ~$5 |
+
+### Sponsor tiers
+
+| Tier | Amount | Perk |
+|---|---|---|
+| ☕ **Supporter** | $3/mo | Your name in the backers list |
+| 🚀 **Backer** | $10/mo | Above, plus a link next to your name |
+| 🏆 **Sustainer** | $25/mo | Above, plus a say in the roadmap |
+| 🏛️ **Classroom Sponsor** | $60/mo | Covers the entire monthly bill. Logo on the landing page and a sponsored classroom |
+
+One-time: **$15** covers a year of domain · **$25** covers the Google Play developer fee · **$99** covers a year of the Apple Developer Program.
+
+<div align="center">
+
+### [❤️ Sponsor PROGNOS →](https://github.com/sponsors/26sudipta)
+
+</div>
+
+Can't sponsor? Starring the repo, filing issues, and telling your coding club about PROGNOS
+helps just as much.
 
 ## 📄 License
 
 Copyright © 2026 Sudipta Das.
 
-PROGNOS is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0): you're free to use, study, modify, and self-host it — but if you distribute a modified version or run one as a network service, you must open-source your changes under the same license.
+PROGNOS is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0): you're free to use, study, modify, and self-host it, but if you distribute a modified version or run one as a network service, you must open-source your changes under the same license.
 
 ---
 
 <div align="center">
+
+![PROGNOS, open source, live at prognos-chi.vercel.app](docs/slide_close.jpg)
 
 Built with discipline: design-first, one vertical slice at a time, docs after every phase.
 
