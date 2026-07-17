@@ -28,6 +28,20 @@ class RefreshToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True
     )
+    # Set only when the token is revoked *by rotation* (a logout revoke leaves this
+    # NULL). Used to recognize a benign concurrent multi-tab refresh: a rotated token
+    # presented again within the grace window is served a fresh pair, not rejected.
+    rotated_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    # The child token this one was rotated into — records the rotation chain for
+    # auditing / reuse-detection. SET NULL on delete so it never blocks the
+    # user-delete cascade.
+    replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("refresh_tokens.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,

@@ -1,7 +1,39 @@
 # PROGRESS.md — Implementation Log
 
 ## Current Status: LIVE & COMPLETE — web app deployed free (Vercel + Render + Neon + cron-job.org).
-**Last Updated:** 2026-07-13 (Phase 5.4 — CI: GitHub Actions quality gates)
+**Last Updated:** 2026-07-18 (QA follow-up Slice 1 — refresh-token rotation race)
+
+---
+
+## QA Follow-up (post `qa_audit_2026_07`) [IN_PROGRESS]
+
+Re-verified the `docs/qa_audit_2026_07.md` findings against live code: all 7 written-up bugs
+(A/B/C/E/G/H/I) were real and already fixed + committed in `3f25f76`. The one genuinely-open
+item was the **refresh-token rotation race** (audit filed it "dismissed / deferred"). Backlog:
+Slice 1 (this), Slice 2 = per-user-TZ heatmap [awaiting A/B design pick], Slice 3 = lint debt + CI gates.
+
+### Slice 1 — Refresh-token rotation race [DONE]
+**Completed:** 2026-07-18
+
+**What was built:**
+- `backend/alembic/versions/009_refresh_token_rotation_lineage.py` — adds `rotated_at` +
+  `replaced_by_id` (self-FK, `ON DELETE SET NULL`) to `refresh_tokens`
+- `backend/app/models/refresh_token.py` — two new mapped columns
+- `backend/app/services/auth.py` — `rotate_refresh_token` rewritten with a 30 s grace window +
+  `_issue_child` helper; logs `refresh-token reuse rejected` on post-grace replay
+- `backend/tests/integration/test_auth_service.py` — +5 tests (grace, logout-all denial, replay, chain, existing kept)
+- `docs/refresh_token_rotation.md` — full educational write-up
+
+**Technical decisions:**
+- Grace-window rotation instead of the reverted `SELECT … FOR UPDATE`: a token rotated < 30 s ago
+  is served a fresh pair instead of a 401, so a concurrent second tab isn't bounced to `/login`.
+- `rotated_at` distinguishes a rotation-revoke from a logout-revoke (logout leaves it NULL) — a
+  logged-out token can never slip through the grace branch.
+- Grace is granted only while the rotation's **child** is still unrevoked — this keeps logout-all
+  authoritative (it revokes the child), closing a 30 s post-logout-all replay window.
+- No family-kill on post-grace reuse (avoids logging out a user's late-waking tab); reuse is logged.
+
+**Verified:** migration 008↔009 round-trips; `test_auth_service.py` 20 passed (was 15).
 
 ---
 

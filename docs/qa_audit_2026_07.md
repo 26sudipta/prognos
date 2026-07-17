@@ -73,6 +73,9 @@ the UTC keys the API sends. *(Per-user-timezone bucketing remains a future enhan
   was prototyped and **reverted** because it makes a second tab's concurrent `/auth/refresh` get a 401
   → bounce to `/login`. The race is already mitigated (httpOnly cookie + single-flight refresh) and
   needs a replayed stolen cookie to exploit; the cure was worse than the disease for multi-tab users.
+  **Update (2026-07-18): now fixed** via a grace-window rotation (migration 009 adds
+  `rotated_at` + `replaced_by_id`; a token rotated < 30 s ago is served a fresh pair instead of a
+  401). No `FOR UPDATE`, no multi-tab regression. See `docs/refresh_token_rotation.md`.
 - **Callback `replaceState`** — intentionally scrubs the token from the URL/history.
 - **Hero countdown "drops seconds" at ≥1 day**, **rating-chart empty array** (guarded),
   **join-button spinner lag**, **token-reuse-after-rotation** (correctly rejected),

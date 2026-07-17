@@ -1,5 +1,6 @@
 import hashlib
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import HTTPException, status
@@ -19,8 +20,16 @@ from app.models.classroom import Classroom, ClassroomLeaderboard, ClassroomMembe
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_TOKEN_INFO_URL = "https://oauth2.googleapis.com/tokeninfo"
+
+# A refresh token that was just rotated stays usable for this long: two tabs sharing
+# the httpOnly cookie can both send the same token in-flight, and the one that arrives
+# just after the winner committed should get a fresh session, not a 401 → /login bounce.
+# A rotated token replayed *after* this window is treated as stale/stolen and rejected.
+ROTATION_GRACE = timedelta(seconds=30)
 
 
 async def exchange_google_code(code: str) -> dict:
@@ -153,38 +162,93 @@ async def create_session(db: AsyncSession, user_id: str) -> tuple[str, str]:
     return access_token, raw_refresh
 
 
+async def _issue_child(db: AsyncSession, user_id: str) -> tuple[str, str, str]:
+    """Mint an access token + a fresh (unrevoked) refresh-token row.
+
+    Flushes but does not commit — the caller commits, so the whole rotation lands in
+    one transaction. Returns (access_token, raw_refresh, child_id).
+    """
+    access_token = create_access_token(user_id)
+    raw_refresh = create_refresh_token()
+    child = RefreshToken(
+        user_id=user_id,
+        token_hash=hash_token(raw_refresh),
+        expires_at=refresh_token_expires_at(),
+    )
+    db.add(child)
+    await db.flush()  # populate child.id for the rotation-chain link
+    return access_token, raw_refresh, str(child.id)
+
+
 async def rotate_refresh_token(
     db: AsyncSession, raw_refresh: str
 ) -> tuple[str, str, str]:
-    """Validate refresh token, revoke it, issue new pair.
+    """Validate a refresh token and issue a new pair, tolerating concurrent rotation.
 
     Returns (new_access_token, new_raw_refresh, user_id).
+
+    Multi-tab safety: two tabs share one httpOnly cookie and can send the same token
+    in-flight. Truly-simultaneous calls both read `revoked_at IS NULL` (neither's
+    revoke is committed yet) and both rotate — each gets its own valid child. A call
+    that arrives just after the winner committed sees the token already rotated; within
+    ROTATION_GRACE that's a benign sibling refresh, so it's served a fresh pair instead
+    of a 401. A rotated token replayed after the grace window, or a token revoked by
+    logout (rotated_at is NULL), is rejected.
     """
     token_hash = hash_token(raw_refresh)
     now = datetime.now(UTC)
 
     result = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > now,
-        )
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
     )
     token_row = result.scalar_one_or_none()
 
-    if token_row is None:
+    # Unknown token, or expired outright.
+    if token_row is None or token_row.expires_at <= now:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token invalid or expired",
         )
 
-    # Revoke old token
-    token_row.revoked_at = now
-    await db.flush()
-
     user_id = str(token_row.user_id)
-    new_access, new_refresh = await create_session(db, user_id)
-    return new_access, new_refresh, user_id
+
+    # Live token → normal rotation: revoke it, mint its child, link the chain.
+    if token_row.revoked_at is None:
+        new_access, new_refresh, child_id = await _issue_child(db, user_id)
+        token_row.revoked_at = now
+        token_row.rotated_at = now
+        token_row.replaced_by_id = child_id
+        await db.commit()
+        return new_access, new_refresh, user_id
+
+    # Already revoked. If it was rotated (not logged out) within the grace window AND the
+    # child it rotated into is still live, this is a concurrent sibling refresh — hand it a
+    # fresh pair rather than bounce the tab. The child-liveness check is what keeps
+    # logout-all honest: `revoke_all_tokens` skips the already-revoked parent but revokes
+    # the live child, so a replay inside the window after "log out everywhere" is denied
+    # here instead of minting a fresh session. A normal multi-tab race leaves the child
+    # alive, so it still passes.
+    if token_row.rotated_at is not None and now - token_row.rotated_at <= ROTATION_GRACE:
+        child = (
+            await db.get(RefreshToken, token_row.replaced_by_id)
+            if token_row.replaced_by_id is not None
+            else None
+        )
+        if child is not None and child.revoked_at is None:
+            new_access, new_refresh, _ = await _issue_child(db, user_id)
+            await db.commit()
+            return new_access, new_refresh, user_id
+
+    # Logout-revoked, or a rotated token replayed after the grace window → reject.
+    logger.warning(
+        "refresh-token reuse rejected (user=%s rotated_at=%s)",
+        token_row.user_id,
+        token_row.rotated_at,
+    )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Refresh token invalid or expired",
+    )
 
 
 async def revoke_token(db: AsyncSession, raw_refresh: str) -> None:

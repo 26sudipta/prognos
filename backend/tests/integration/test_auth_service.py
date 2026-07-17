@@ -148,6 +148,101 @@ async def test_rotate_refresh_token_rejects_already_revoked(
     assert exc_info.value.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_rotate_links_replacement_chain(
+    db_session: AsyncSession, test_user: User
+):
+    """A normal rotation records rotated_at + replaced_by_id → the new child token."""
+    from app.core.security import hash_token
+    _, old_refresh = await create_session(db_session, str(test_user.id))
+    _, new_refresh, _ = await rotate_refresh_token(db_session, old_refresh)
+
+    old_row = (
+        await db_session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == hash_token(old_refresh))
+        )
+    ).scalar_one()
+    child_row = (
+        await db_session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == hash_token(new_refresh))
+        )
+    ).scalar_one()
+
+    assert old_row.rotated_at is not None
+    assert old_row.replaced_by_id == child_row.id
+
+
+@pytest.mark.asyncio
+async def test_rotate_within_grace_serves_concurrent_sibling(
+    db_session: AsyncSession, test_user: User
+):
+    """A rotated token replayed within the grace window (a second tab's in-flight
+    refresh) gets a fresh pair, not a 401 — and the sibling child is valid."""
+    from app.core.security import hash_token
+    _, old_refresh = await create_session(db_session, str(test_user.id))
+
+    _, first_refresh, _ = await rotate_refresh_token(db_session, old_refresh)
+    # Same old token again, immediately — the concurrent-sibling case.
+    _, second_refresh, user_id = await rotate_refresh_token(db_session, old_refresh)
+
+    assert user_id == str(test_user.id)
+    assert second_refresh not in (old_refresh, first_refresh)
+
+    # Both minted children are usable (unrevoked).
+    for raw in (first_refresh, second_refresh):
+        row = (
+            await db_session.execute(
+                select(RefreshToken).where(RefreshToken.token_hash == hash_token(raw))
+            )
+        ).scalar_one()
+        assert row.revoked_at is None
+
+
+@pytest.mark.asyncio
+async def test_rotate_grace_denied_after_logout_all(
+    db_session: AsyncSession, test_user: User
+):
+    """logout-all must close the grace window: it revokes the live child, so replaying the
+    just-rotated parent inside the window is rejected instead of minting a fresh session."""
+    from fastapi import HTTPException
+    _, old_refresh = await create_session(db_session, str(test_user.id))
+    await rotate_refresh_token(db_session, old_refresh)  # parent rotated → child live
+
+    # "Log out everywhere" — revokes the child (parent already revoked by rotation).
+    await revoke_all_tokens(db_session, str(test_user.id))
+
+    # Replay the parent well within the grace window → denied because its child is dead.
+    with pytest.raises(HTTPException) as exc_info:
+        await rotate_refresh_token(db_session, old_refresh)
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_rotate_after_grace_rejects_replay(
+    db_session: AsyncSession, test_user: User
+):
+    """Past the grace window, replaying a rotated token is treated as stale/stolen → 401."""
+    from fastapi import HTTPException
+
+    from app.core.security import hash_token
+    from app.services.auth import ROTATION_GRACE
+    _, old_refresh = await create_session(db_session, str(test_user.id))
+    await rotate_refresh_token(db_session, old_refresh)
+
+    # Backdate the rotation so the replay falls outside the grace window.
+    old_row = (
+        await db_session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == hash_token(old_refresh))
+        )
+    ).scalar_one()
+    old_row.rotated_at = datetime.now(UTC) - ROTATION_GRACE - timedelta(seconds=5)
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await rotate_refresh_token(db_session, old_refresh)
+    assert exc_info.value.status_code == 401
+
+
 # ---------------------------------------------------------------------------
 # revoke_token / revoke_all_tokens
 # ---------------------------------------------------------------------------
