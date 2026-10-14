@@ -1,7 +1,51 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: LIVE & COMPLETE — web app deployed free (Vercel + Render + Neon + cron-job.org).
-**Last Updated:** 2026-07-18 (QA follow-up Slice 1 — refresh-token rotation race)
+## Current Status: OUTAGE — Render backend has no healthy instance; awaiting dashboard action.
+**Last Updated:** 2026-10-14 (production outage triage + uptime hardening)
+
+---
+
+## Production Outage — 2026-10-14 [IN_PROGRESS]
+
+Backend unreachable; frontend and database both fine. Full writeup:
+[docs/uptime_runbook.md](docs/uptime_runbook.md).
+
+**Diagnosis (measured, not inferred):**
+- Vercel frontend `200`; Neon healthy (`server_version 18.6`, **726 users / 332 contests** intact)
+- `alembic_version = 009` with `rotated_at` + `replaced_by_id` present → a container *did*
+  boot and migrate after the `613333e` auto-deploy, so **the deployed code is not the problem**
+- `prognos-api.onrender.com`: TLS completes, then **0 bytes for 180 s**. A nonexistent Render
+  host 404s in 10 s with `x-render-routing: no-server`, so the service is still *registered*
+  but Render has **no healthy instance** and holds requests at the edge
+- Disproved: migration-009 failure, multiple alembic heads, Neon-IPv6-only (it is dual-stack)
+- Cron jobs stopping is a **symptom** — cron-job.org auto-disables jobs after repeated failures
+
+**Root hazard found (arithmetic, independent of the trigger):** the 10-minute keep-warm ping
+never lets the service idle past Render's 15-min threshold, so it bills **744 of 750
+free instance-hours in a 31-day month (0.8 % headroom)**. 750 h is per *workspace* per month,
+and exhausting it suspends all free web services until the 1st. Seven months a year run at
+≤30 h headroom. Fix: 22-hour ping window (`*/10 0-1,4-23 * * *`) → ~690 h, ~60 h headroom.
+
+**Hardening shipped:**
+- `backend/docker-entrypoint.sh` (NEW) — replaces `CMD alembic upgrade head && uvicorn`.
+  The `&&` meant one transient Neon connect at boot left uvicorn unstarted and the container
+  dead. Now 5 retries with exponential backoff, and the server starts either way.
+- `backend/Dockerfile` — `CMD ["./docker-entrypoint.sh"]`
+- `backend/app/api/v1/routes/health.py` — added `/api/v1/ready` (`SELECT 1`, `503` when the DB
+  is unreachable). Deliberately **not** on `healthCheckPath`: `/health` stays dependency-free
+  because a DB-touching probe against scale-to-zero Neon could fail the first post-deploy
+  check and mark the deploy failed.
+- `backend/tests/integration/test_health_routes.py` (NEW) — 4 tests, including
+  `test_health_does_not_touch_the_database` which pins that invariant with a dead engine.
+- `render.yaml` — documented that `region: singapore` never took effect (live origin is
+  `gcp-us-west1-1`; Render honors `region` only at creation, so `a805e8c` was a no-op).
+
+**Blocked on user:** Render dashboard status badge + last deploy log + Billing→Usage. An
+hours suspension resets on the 1st, so hours alone do not explain a 14 Oct outage with only
+one free service in the workspace — the dashboard settles it.
+
+**Logged, not fixed:** cron endpoints run work in `BackgroundTasks`, so a long `sync-handles`
+run can be reaped if the instance spins down mid-flight.
 
 ---
 
