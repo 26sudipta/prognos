@@ -40,6 +40,15 @@ non-local host, with the check running before any `app.*` import and written bac
 `os.environ` so the *application* engine (TestClient, `/ready`) is covered too;
 `ALLOW_REMOTE_TEST_DB=1` overrides deliberately. Suite: 157 passed in 7.45s against local
 `prognos_test` vs 343s against Neon, 0 rows written to prod.
+**MIGRATION GUARD (closes the actual outage path):** guarding pytest was only half of it --
+the command that *caused* the outage was `alembic`, which CLAUDE.md §4 documents as the normal
+workflow. So `.env` was flipped (`DATABASE_URL` -> local `prognos`, migrated 006->009; Neon
+preserved as commented `PROD_DATABASE_URL`), and `alembic/env.py` now refuses a non-local host
+**gated on `ENVIRONMENT`, not an opt-in var** -- render.yaml sets `ENVIRONMENT=production` in
+the container, the one place a remote target is correct, so an opt-in flag would have bricked
+boot migrations. Verified: local+dev allowed (`009 (head)`), Neon+dev refused before
+connecting, Neon+production allowed. `python-dotenv` promoted from transitive to declared.
+
 **Still open (minor):** fixtures leak ~35 rows per run, now harmlessly into the local DB.
 
 Backend unreachable; frontend and database both fine. Full writeup:

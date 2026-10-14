@@ -405,13 +405,47 @@ Singapore.
 in the test database — the same cleanup gap that filled production, now harmlessly local. Worth
 a follow-up to wrap fixtures in a rollback or truncate between runs.
 
-### Also recommended
+### The migration guard (closes the actual outage path)
 
-`alembic upgrade head` run locally still targets whatever `DATABASE_URL` says, which is
-production. That is the exact command that caused the outage. Production migrations run in
-the container (Dockerfile `CMD`), so a local run should essentially never target Neon —
-consider pointing `DATABASE_URL` at local Postgres for day-to-day work and keeping the
-production URL in a separate, deliberately-sourced file.
+Guarding `pytest` was only half of it. The command that *caused* the outage was `alembic`,
+and `CLAUDE.md` §4 documents it as the normal workflow:
+
+```
+.venv/bin/python -m alembic upgrade head
+.venv/bin/python -m alembic revision --autogenerate -m "..."
+```
+
+Run either from `backend/` with `DATABASE_URL` pointing at Neon and you stamp production
+again — and `--autogenerate` additionally diffs the models against production's schema.
+
+Two changes close it:
+
+1. **`.env` flipped.** `DATABASE_URL` now points at local `prognos` (migrated `006 → 009`).
+   The Neon URL is preserved as a commented `PROD_DATABASE_URL` for deliberate, read-only use.
+2. **A host guard in `alembic/env.py`**, gated on `ENVIRONMENT` — *not* on an opt-in variable.
+   This distinction matters: `render.yaml` sets `ENVIRONMENT=production` in the container, and
+   the container is the one place a remote target is correct, since the Dockerfile applies
+   migrations at boot. An opt-in flag like `ALLOW_REMOTE_MIGRATIONS=1` would have to be set
+   there too, and forgetting it would brick startup — recreating the outage while trying to
+   prevent it.
+
+Verified across all three paths:
+
+| `DATABASE_URL` | `ENVIRONMENT` | Result |
+|---|---|---|
+| local `prognos` | `development` | **Allowed** — `alembic current` → `009 (head)` |
+| Neon | `development` | **Refused**, and it raises *before* connecting |
+| Neon | `production` | **Allowed** — the container's boot migration still works |
+
+```
+RuntimeError:
+Refusing to run migrations against a non-local database with ENVIRONMENT='development'.
+  host     : ep-sweet-forest-ao5l5nla.c-2.ap-southeast-1.aws.neon.tech
+  database : prognos
+```
+
+`python-dotenv` was also promoted from a transitive dependency of `pydantic-settings` to a
+declared one, since `conftest.py` imports it directly.
 
 ---
 
