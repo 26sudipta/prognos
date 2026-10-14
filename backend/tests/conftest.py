@@ -35,8 +35,11 @@ _BACKEND_DIR = Path(__file__).resolve().parents[1]
 def _resolve_test_db_url() -> str:
     """Pick the test database URL, preferring env vars over the .env file."""
     file_env = dotenv_values(_BACKEND_DIR / ".env")
-    for source in (os.environ, file_env):
-        for key in ("TEST_DATABASE_URL", "DATABASE_URL"):
+    # Key outer, source inner: TEST_DATABASE_URL must win from *either* source
+    # before DATABASE_URL is considered at all. The other order would let an
+    # exported DATABASE_URL shadow .env's TEST_DATABASE_URL.
+    for key in ("TEST_DATABASE_URL", "DATABASE_URL"):
+        for source in (os.environ, file_env):
             value = source.get(key)
             if value:
                 return value
