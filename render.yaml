@@ -9,7 +9,17 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     plan: free
+    # NOTE: this value is only honored when the service is FIRST created.
+    # The live service actually runs in us-west1 (its origin resolves to
+    # gcp-us-west1-1.origin.onrender.com) because it predates the region change
+    # in a805e8c. Every query therefore crosses the Pacific to Neon in
+    # ap-southeast-1. Fixing it requires DELETING and RECREATING the service --
+    # editing this line does nothing. See docs/uptime_runbook.md.
     region: singapore
+    # Keep this pointed at /api/v1/health, which does NO database I/O.
+    # /api/v1/ready checks Postgres and must never be the health check: Neon
+    # scales to zero, so a DB-dependent probe can fail right after a deploy and
+    # get the deploy marked failed.
     healthCheckPath: /api/v1/health
     # Migrations run at container start (Dockerfile CMD) — free tier does not
     # support preDeployCommand.

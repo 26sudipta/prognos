@@ -29,7 +29,11 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
-# Apply DB migrations, then start the server. Shell form so $PORT (injected by
-# Render) expands; falls back to 8000 locally. `alembic upgrade head` is a no-op
-# when the DB is already current.
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Apply DB migrations (retried), then start the server. See
+# docker-entrypoint.sh: migrations are no longer chained with `&&`, so a
+# transient Neon connect at boot cannot leave the service with no instance.
+COPY docker-entrypoint.sh ./
+# Invoked via `sh` so the image does not depend on the executable bit
+# surviving the COPY — a "permission denied" here would reproduce the exact
+# no-healthy-instance state this script exists to prevent.
+CMD ["sh", "./docker-entrypoint.sh"]
