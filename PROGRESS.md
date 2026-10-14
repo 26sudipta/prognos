@@ -1,11 +1,46 @@
 # PROGRESS.md — Implementation Log
 
-## Current Status: OUTAGE — Render backend has no healthy instance; awaiting dashboard action.
-**Last Updated:** 2026-10-14 (production outage triage + uptime hardening)
+## Current Status: LIVE — outage resolved 2026-10-14; root cause found, prod/test isolation fixed.
+**Last Updated:** 2026-10-14 (outage root cause + test isolation)
 
 ---
 
-## Production Outage — 2026-10-14 [IN_PROGRESS]
+## Production Outage — 2026-10-14 [DONE]
+
+**ROOT CAUSE (proven):** the deployed image could not resolve the database's own migration
+revision, so the container died at boot on every start. `backend/.env` points `DATABASE_URL`
+at production Neon, so a local `alembic upgrade head` while building `613333e` stamped
+**production** at revision `009`. `613333e` was then **never pushed** (reflog: `origin/main`
+went `f292be3 → d150cfb`), and `d150cfb` ships migrations **001-008 only**. Every container
+start then did: read `alembic_version` → `009` → cannot locate `009` in its own `versions/`
+→ `CommandError` → exit non-zero → `&&` short-circuits → **uvicorn never starts**. Proven
+offline by rebuilding `d150cfb`'s `versions/` and resolving revisions against it
+(`heads=['008']`, `resolve('009')` raises).
+
+**FIX:** pushing the commits (`2a4b89e`, `eefcbae`) rebuilt the image with revision 009
+present, so `alembic upgrade head` resolves it as a clean no-op. **Verified live:**
+`/api/v1/health` 200 in 3.0s, `/api/v1/ready` 200 `"database":"ok"`, Vercel proxy 200,
+unsigned cron 401. The new entrypoint independently prevents a repeat — uvicorn now starts
+even when migrations fail.
+
+**Corrected an earlier reading:** `alembic_version = 009` was initially taken as proof a
+container had booted and migrated, ruling out the deployed code. Wrong — the stamp came
+from a laptop. The instance-hour arithmetic below is a real but **separate** hazard; it did
+not cause this outage.
+
+**PROD/TEST ISOLATION (the underlying hazard):** the suite built its engine from
+`settings.DATABASE_URL`, so every `pytest` run wrote to production — 747 test users and 724
+test classrooms had accumulated. Purged (backed up first, dependency order: test invites →
+test-owned classrooms → test users, since `classrooms.owner_id` and
+`classroom_invites.created_by` are `NO ACTION`); verified 0 real-user memberships in
+test-owned classrooms beforehand and 7 orphan classes clean afterwards. Prod now 15 users /
+2 classrooms, contests + 4018 submissions untouched.
+`tests/conftest.py` now resolves `TEST_DATABASE_URL` and **aborts collection** on a
+non-local host, with the check running before any `app.*` import and written back to
+`os.environ` so the *application* engine (TestClient, `/ready`) is covered too;
+`ALLOW_REMOTE_TEST_DB=1` overrides deliberately. Suite: 157 passed in 7.45s against local
+`prognos_test` vs 343s against Neon, 0 rows written to prod.
+**Still open (minor):** fixtures leak ~35 rows per run, now harmlessly into the local DB.
 
 Backend unreachable; frontend and database both fine. Full writeup:
 [docs/uptime_runbook.md](docs/uptime_runbook.md).
@@ -40,9 +75,9 @@ and exhausting it suspends all free web services until the 1st. Seven months a y
 - `render.yaml` — documented that `region: singapore` never took effect (live origin is
   `gcp-us-west1-1`; Render honors `region` only at creation, so `a805e8c` was a no-op).
 
-**Blocked on user:** Render dashboard status badge + last deploy log + Billing→Usage. An
-hours suspension resets on the 1st, so hours alone do not explain a 14 Oct outage with only
-one free service in the workspace — the dashboard settles it.
+**Keep-warm still to do (user):** re-enable the 3 cron-job.org jobs with the 22-hour window
+(`*/10 0-1,4-23 * * *`) + failure notifications. 24/7 pinging bills 744 of 750 free
+instance-hours in a 31-day month; the window brings it to ~690h.
 
 **Logged, not fixed:** cron endpoints run work in `BackgroundTasks`, so a long `sync-handles`
 run can be reaped if the instance spins down mid-flight.

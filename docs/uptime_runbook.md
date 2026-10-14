@@ -1,11 +1,62 @@
 # Uptime Runbook — Keeping `prognos-api` Running
 
 **Written:** 2026-10-14, during the outage that took the API down.
-**Scope:** why the backend went down, how to bring it back, and how to stop it recurring.
+**Status:** **RESOLVED** — root cause found and proven, service verified back up the same day.
+**Scope:** why the backend went down, how it was fixed, and how to stop it recurring.
 
 ---
 
-## 1. What is actually broken
+## 0. Root cause (proven)
+
+> **The deployed image could not resolve the database's own migration revision, so the
+> container died at boot on every single start.**
+
+`backend/.env` points `DATABASE_URL` at **production Neon**. Running `alembic upgrade head`
+locally while building commit `613333e` therefore stamped **production** at revision `009`.
+That commit was then **never pushed** — `git reflog` shows `origin/main` went
+`f292be3 → d150cfb`, and `d150cfb` ships migrations **001–008 only**.
+
+So production's *schema* moved ahead of production's *code*. Every container start then ran:
+
+```
+alembic upgrade head
+  → reads alembic_version from the DB  → '009'
+  → looks for revision '009' in its own versions/ dir  → only 001-008 present
+  → CommandError: Can't locate revision identified by '009'
+  → exit non-zero
+  → `&&` short-circuits, uvicorn NEVER STARTS, container dies
+```
+
+Reproduced offline against the exact deployed tree, no database involved:
+
+```
+$ git ls-tree --name-only d150cfb backend/alembic/versions/   # 8 files, 001..008
+heads known to the deployed image: ['008']
+resolve '008': OK -> 008
+resolve '009': *** CommandError: Can't locate revision identified by '009'
+```
+
+This explains every observation: a registered hostname with no healthy instance, an
+indefinite hang rather than a 503, a perfectly healthy database, code that works fine
+locally, and a three-month outage that never self-healed — because every restart hit the
+same unresolvable revision.
+
+**The fix that worked:** pushing the commits. The image now contains revision `009`, so
+`alembic upgrade head` resolves it and is a clean no-op. Verified at 2026-10-14 —
+`/api/v1/health` `200` in 3.0 s, `/api/v1/ready` `200` with `"database":"ok"`, the Vercel
+proxy `200`, and unsigned cron calls still `401`. The §6 entrypoint change independently
+prevents a repeat: uvicorn now starts even when migrations fail.
+
+### Correction to an earlier reading
+
+An intermediate diagnosis treated `alembic_version = 009` as proof that *a container had
+booted and migrated successfully*, and so ruled the deployed code out. That was wrong: the
+stamp came from a **laptop**, not from a container. The instance-hour arithmetic in §3 is a
+real and separate hazard, but it was **not** what took the service down.
+
+---
+
+## 1. Evidence gathered during triage
 
 Measured from this machine on 2026-10-14, not inferred:
 
@@ -45,10 +96,10 @@ the request at the edge instead of answering.
 
 Three theories were tested and **disproved**:
 
-1. **"Migration 009 broke the deploy."** The last commit (`613333e`, 2026-07-18) added
-   migration 009 and `autoDeploy: true` shipped it. But the live DB is already at
-   `009` with both new columns present, so a container *did* boot, *did* reach Neon,
-   and *did* migrate to completion. The deployed code works.
+1. ~~**"Migration 009 broke the deploy."**~~ **This was half right, and the half that was
+   wrong mattered.** Migration 009 *was* involved — but not because it failed. It was never
+   deployed at all (`613333e` was never pushed), while the *database* was already stamped
+   at 009 from a local run. The mismatch, not the migration, is the cause. See §0.
 2. **"Multiple alembic heads."** The chain is linear `001 → 009`, single head.
 3. **"Neon is IPv6-only and Render can't reach it."** Neon is dual-stack — it
    publishes both `A` (`13.251.17.193`, …) and `AAAA` records.
@@ -58,7 +109,12 @@ and four separate requests across 180 s failed to wake it.
 
 ---
 
-## 2. The one thing to check (needs the dashboard)
+## 2. Restoring it (kept for reference — already done)
+
+> Resolved by §0: pushing the hardened commits rebuilt the image with revision 009 present.
+> The steps below are what to do if the service is ever down for a *different* reason.
+
+### If it happens again: check the dashboard
 
 Everything above was measurable from outside. The remaining question — *why* there is
 no instance — is only visible from inside Render, and there is no API token on this
@@ -279,6 +335,83 @@ is a genuine design limit of the worker-free deployment, not today's outage. Opt
 first created**, so the change in `a805e8c` never took effect. Every query crosses the
 Pacific to Neon in `ap-southeast-1`. Editing the YAML does nothing — fixing it means
 deleting and recreating the service, which is a separate decision from restoring it.
+
+---
+
+## 6b. The underlying hazard: tests and migrations pointed at production
+
+§0 showed the outage was caused by a **local** `alembic upgrade head` reaching the
+**production** database. The same wiring had a second, quieter effect.
+
+`backend/.env` sets `DATABASE_URL` to production Neon, and the suite built its engine
+straight from `settings.DATABASE_URL`. So every `pytest` run created rows in production.
+By 2026-10-14 that had accumulated:
+
+| | Before | After cleanup |
+|---|---|---|
+| Users | 762 (**747** `@test.com`) | **15** (all real) |
+| Classrooms | 726 (**724** test-owned) | **2** (both real) |
+| Invites | 348 | 2 |
+| Memberships | 704 | 4 |
+| `user_handles` | 563 | 14 |
+
+Leakage was dated `2026-06-30` (220), `07-01` (116), `07-02` (340), `07-13` (35) and
+`10-14` (36) — the last batch from this session's own verification run.
+
+**Cleanup performed** (backed up to JSON first, then one transaction): test-created invites,
+then test-owned classrooms, then the test users. `classrooms.owner_id` and
+`classroom_invites.created_by` are `ON DELETE NO ACTION`, so that order matters — a plain
+`DELETE FROM users` fails. Checked first that **no real user** held a membership or
+leaderboard row in a test-owned classroom (both zero), then verified seven orphan classes
+afterwards: all clean, `alembic_version` still `009`, contests and all 4018 submissions
+untouched.
+
+### The guard
+
+`tests/conftest.py` now resolves `TEST_DATABASE_URL` first and **aborts collection** if the
+resolved host is not local:
+
+```
+RuntimeError:
+Refusing to run the test suite against a non-local database.
+  resolved host : ep-sweet-forest-ao5l5nla.c-2.ap-southeast-1.aws.neon.tech
+  database      : prognos
+If you truly mean to target a remote database, set ALLOW_REMOTE_TEST_DB=1.
+```
+
+Two details make it actually airtight rather than decorative:
+
+- The check runs **before any `app.*` import** and writes the result back into
+  `os.environ["DATABASE_URL"]`. `app.core.config` builds its `Settings` singleton at import
+  time and env vars outrank the `.env` file, so this redirects the **application** engine
+  too — which is what `TestClient` and `/ready` use. Guarding only the fixtures would have
+  left that path still pointed at production.
+- The one stray `create_async_engine(settings.DATABASE_URL)` in
+  `test_clist_sync_integration.py` was rerouted through the same guarded URL.
+
+`ALLOW_REMOTE_TEST_DB=1` remains as a deliberate override. Nothing in CI should set it.
+
+### Result
+
+| | Against prod Neon | Against local `prognos_test` |
+|---|---|---|
+| Suite | 157 passed in **343 s** | 157 passed in **7.45 s** |
+| Rows written to production | 36 users, 34 handles | **0** |
+
+A 46x speedup was an unplanned bonus: the old runtime was almost entirely round-trips to
+Singapore.
+
+**Still open (minor):** the fixtures leak. A clean run left 35 users and 34 classrooms behind
+in the test database — the same cleanup gap that filled production, now harmlessly local. Worth
+a follow-up to wrap fixtures in a rollback or truncate between runs.
+
+### Also recommended
+
+`alembic upgrade head` run locally still targets whatever `DATABASE_URL` says, which is
+production. That is the exact command that caused the outage. Production migrations run in
+the container (Dockerfile `CMD`), so a local run should essentially never target Neon —
+consider pointing `DATABASE_URL` at local Postgres for day-to-day work and keeping the
+production URL in a separate, deliberately-sourced file.
 
 ---
 

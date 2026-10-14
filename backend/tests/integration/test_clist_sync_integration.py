@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+from tests.conftest import TEST_DATABASE_URL
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -14,7 +16,8 @@ from app.workers.clist_sync import _run_sync
 
 
 def _make_async_session_factory():
-    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    # TEST_DATABASE_URL, not settings.DATABASE_URL: see the guard in conftest.py.
+    engine = create_async_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     return engine, factory
 
