@@ -8,12 +8,14 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.classroom import (
     Classroom,
+    ClassroomDailyVisit,
     ClassroomInvite,
     ClassroomLeaderboard,
     ClassroomMembership,
@@ -194,7 +196,9 @@ async def get_user_classrooms(db: AsyncSession, user_id: uuid.UUID) -> list[Clas
 
 async def get_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID) -> ClassroomResponse:
     classroom = await _get_classroom_or_404(db, classroom_id)
-    return await _build_classroom_response(db, classroom, user_id)
+    response = await _build_classroom_response(db, classroom, user_id)
+    await _record_visit(db, classroom_id, user_id)
+    return response
 
 
 async def delete_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID) -> None:
@@ -206,6 +210,9 @@ async def delete_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: u
     await db.execute(delete(ClassroomLeaderboard).where(ClassroomLeaderboard.classroom_id == classroom_id))
     await db.execute(delete(ClassroomMembership).where(ClassroomMembership.classroom_id == classroom_id))
     await db.execute(delete(ClassroomInvite).where(ClassroomInvite.classroom_id == classroom_id))
+    await db.execute(
+        delete(ClassroomDailyVisit).where(ClassroomDailyVisit.classroom_id == classroom_id)
+    )
     classroom.is_active = False
     await db.commit()
 
@@ -540,6 +547,41 @@ async def _ensure_leaderboard(db: AsyncSession, classroom_id: uuid.UUID, member_
     return rows
 
 
+# ── Visit logging (Classroom v2 Slice 0, docs/phase_6_0.md) ─────────────────────
+
+def _visit_insert(classroom_id: uuid.UUID, user_id: uuid.UUID):
+    """Today's visit row (UTC date). A second visit on the same day is a no-op."""
+    return (
+        pg_insert(ClassroomDailyVisit)
+        .values(
+            classroom_id=classroom_id,
+            user_id=user_id,
+            visit_date=datetime.now(UTC).date(),
+        )
+        .on_conflict_do_nothing(constraint="uq_classroom_daily_visits")
+    )
+
+
+async def _record_visit(db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Note that a member opened the classroom today. Never fails the request.
+
+    Called last, after the response is built, by every read that means "this person
+    opened the classroom" (detail and leaderboard today, the league in Slice 1).
+    Both clients hit at least one of them per open, and the unique key makes extra
+    calls free, so the daily count survives tab and client changes.
+
+    The insert runs in a SAVEPOINT. If it fails (say the migration didn't apply
+    on boot), only the savepoint rolls back, nothing loaded earlier is expired,
+    and the caller still gets its response. Analytics must never take a page down.
+    """
+    try:
+        async with db.begin_nested():
+            await db.execute(_visit_insert(classroom_id, user_id))
+        await db.commit()
+    except Exception:
+        logger.exception("classroom visit logging failed for classroom %s", classroom_id)
+
+
 async def get_leaderboard(
     db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID
 ) -> LeaderboardResponse:
@@ -571,7 +613,7 @@ async def get_leaderboard(
 
     computed_at = rows[0].computed_at if rows else None
 
-    return LeaderboardResponse(
+    response = LeaderboardResponse(
         classroom_id=classroom.id,
         classroom_name=classroom.name,
         entries=entries,
@@ -579,6 +621,8 @@ async def get_leaderboard(
         computed_at=computed_at,
         syncing=await _classroom_syncing(db, classroom_id),
     )
+    await _record_visit(db, classroom_id, user_id)
+    return response
 
 
 async def sync_classroom(

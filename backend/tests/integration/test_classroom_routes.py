@@ -5,11 +5,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.classroom import (
     Classroom,
+    ClassroomDailyVisit,
     ClassroomInvite,
     ClassroomLeaderboard,
     ClassroomMembership,
@@ -21,6 +22,7 @@ from app.services.classroom import (
     create_classroom,
     create_invite,
     delete_classroom,
+    get_classroom,
     get_cohort_analytics,
     get_leaderboard,
     get_user_classrooms,
@@ -663,3 +665,101 @@ async def test_soft_delete_user_blocked_when_owns_classroom(db_session: AsyncSes
     with pytest.raises(HTTPException) as exc:
         await soft_delete_user(db_session, str(teacher_user.id))
     assert exc.value.status_code == 409
+
+
+# ── Visit logging (Classroom v2 Slice 0) ──────────────────────────────────────
+
+async def _visits(db: AsyncSession, classroom_id, user_id=None) -> list[ClassroomDailyVisit]:
+    q = select(ClassroomDailyVisit).where(ClassroomDailyVisit.classroom_id == classroom_id)
+    if user_id is not None:
+        q = q.where(ClassroomDailyVisit.user_id == user_id)
+    return list((await db.execute(q)).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_visit_logged_once_per_day_across_endpoints(
+    db_session: AsyncSession, classroom, teacher_user: User
+):
+    """Detail + leaderboard + a re-poll on the same day collapse into one row."""
+    await get_classroom(db_session, classroom.id, teacher_user.id)
+    await get_leaderboard(db_session, classroom.id, teacher_user.id)
+    await get_leaderboard(db_session, classroom.id, teacher_user.id)
+
+    rows = await _visits(db_session, classroom.id, teacher_user.id)
+    assert len(rows) == 1
+    assert rows[0].visit_date == datetime.now(UTC).date()
+
+
+@pytest.mark.asyncio
+async def test_visit_logged_for_student_member(
+    db_session: AsyncSession, classroom, invite, student_with_handle: User
+):
+    await join_classroom(db_session, invite.token, student_with_handle)
+    await get_leaderboard(db_session, classroom.id, student_with_handle.id)
+    assert len(await _visits(db_session, classroom.id, student_with_handle.id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_visit_not_logged_for_non_member(
+    db_session: AsyncSession, classroom, student_user: User
+):
+    from fastapi import HTTPException
+
+    for read in (get_classroom, get_leaderboard):
+        with pytest.raises(HTTPException) as exc:
+            await read(db_session, classroom.id, student_user.id)
+        assert exc.value.status_code == 403
+    assert await _visits(db_session, classroom.id, student_user.id) == []
+
+
+@pytest.mark.asyncio
+async def test_visit_logging_failure_does_not_break_reads(
+    db_session: AsyncSession, classroom, teacher_user: User, monkeypatch
+):
+    """A failing insert (e.g. migration 010 missing on boot) must not cost the page."""
+    import app.services.classroom as classroom_service
+
+    monkeypatch.setattr(
+        classroom_service,
+        "_visit_insert",
+        lambda *_: text("INSERT INTO classroom_daily_visits_missing (x) VALUES (1)"),
+    )
+    detail = await get_classroom(db_session, classroom.id, teacher_user.id)
+    board = await get_leaderboard(db_session, classroom.id, teacher_user.id)
+
+    assert detail.name == "Test Classroom"
+    assert board.classroom_name == "Test Classroom"
+    # The session is still healthy after the rolled-back savepoint.
+    assert await _visits(db_session, classroom.id) == []
+
+
+@pytest.mark.asyncio
+async def test_leaving_keeps_visit_history(
+    db_session: AsyncSession, classroom, invite, student_with_handle: User
+):
+    """Leave-rate is a pilot guardrail, so a leaver's visits stay."""
+    await join_classroom(db_session, invite.token, student_with_handle)
+    await get_leaderboard(db_session, classroom.id, student_with_handle.id)
+    await leave_classroom(db_session, classroom.id, student_with_handle.id)
+    assert len(await _visits(db_session, classroom.id, student_with_handle.id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_classroom_removes_visits(
+    db_session: AsyncSession, classroom, teacher_user: User
+):
+    await get_classroom(db_session, classroom.id, teacher_user.id)
+    await delete_classroom(db_session, classroom.id, teacher_user.id)
+    assert await _visits(db_session, classroom.id) == []
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_user_removes_visits(
+    db_session: AsyncSession, classroom, invite, student_with_handle: User
+):
+    from app.services.auth import soft_delete_user
+
+    await join_classroom(db_session, invite.token, student_with_handle)
+    await get_leaderboard(db_session, classroom.id, student_with_handle.id)
+    await soft_delete_user(db_session, str(student_with_handle.id))
+    assert await _visits(db_session, classroom.id, student_with_handle.id) == []

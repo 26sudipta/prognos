@@ -1,7 +1,74 @@
 # PROGRESS.md — Implementation Log
 
 ## Current Status: LIVE — outage resolved 2026-10-14; root cause found, prod/test isolation fixed.
-**Last Updated:** 2026-10-14 (outage root cause + test isolation)
+**Last Updated:** 2026-10-21 (Classroom v2 Slice 0 built, awaiting deploy)
+
+---
+
+## Phase 6.0: Classroom v2 Slice 0, Visit Baseline [DONE: code + tests; deploy pending]
+**Completed:** 2026-10-21. Doc: `docs/phase_6_0.md`. Not yet committed or pushed, and the
+two-week baseline only starts once it's live.
+
+**What was built:**
+- `backend/alembic/versions/010_classroom_daily_visits.py`: NEW table (009 to 010), unique
+  `(classroom_id, user_id, visit_date)`, `idx_classroom_daily_visits_user_id`, FKs CASCADE
+- `backend/app/models/classroom.py`: `ClassroomDailyVisit` (index name declared to match the migration)
+- `backend/app/services/classroom.py`: `_visit_insert` + `_record_visit` (savepoint, runs last,
+  swallows errors); called by `get_classroom` and `get_leaderboard`; `delete_classroom` clears visits
+- `backend/app/services/auth.py`: `soft_delete_user` clears the user's visits
+- `backend/tests/integration/test_classroom_routes.py`: +7 tests
+
+**Technical decisions:**
+- Deviation from plan §10.0 (which said leaderboard only): log from BOTH detail and leaderboard
+  reads. Web opens with detail, the shipped Android app with leaderboard (detail comes from its
+  cached list), and Slice 1 moves the web default tab to League. The unique key makes overlap free.
+  Plan §10.0 updated in both plan files.
+- `visit_date` is UTC permanently, even after classes get timezones in Slice 1.
+- Leaving or removal keeps visit rows (leave-rate guardrail). Account deletion and classroom
+  deletion remove them.
+- Baseline SQL (weekly actives, return rate by rating third, teacher visit days, leavers) lives
+  in `docs/phase_6_0.md`, validated against seeded data on the local test DB (rolled back).
+
+**Verified:** migration 009 to 010 round-trips on the local test DB; local dev DB at 010;
+`pytest` 164 passed (was 157); ruff shows no new issues in the touched files.
+
+---
+
+## Classroom v2 Research and Plan [DONE]
+**Completed:** 2026-10-16. **Build:** [TODO], waiting on maintainer approval of decisions D-1 to D-7 (plan §13).
+
+**What was produced:**
+- `docs/classroom_v2_research.md`: 20+ similar products, 27 training programs, ~50 community posts,
+  25 peer-reviewed studies, Codeforces API feasibility
+- `docs/classroom_v2_plan.md`: principles, feature catalogue (F1 to F16), Growth Points scoring,
+  Coach Inbox rules, privacy and integrity, data model by slice, 12-slice roadmap with
+  traceability, Slice 0 and Slice 1 mini-design with test plan
+- `docs/classroom_v2_full_plan.md` (2026-10-17): both docs combined into one file with a linked
+  table of contents. Part 1 is the plan, Part 2 the research. Edits made to one copy need copying
+  to the other
+
+**Key decisions and findings:**
+- Front page becomes a weekly near-peer league (brackets of ~12, students see only their own),
+  scored by Growth Points: points from problem rating minus own level, contest solves 1.5x, solve
+  days capped at 5. Community precedent: TLE bot `;gitgud`.
+- Problem ratings come from a new `cf_problems` table joined at rebuild time (no rating column on
+  `submissions`). `participant_type` is stored at ingest and backfilled by a one-off re-fetch.
+- `member_visibility = anonymous` masks values on every endpoint that returns classmates and keeps
+  response shapes unchanged for the shipped Android app.
+- Codeforces Terms forbid commercializing site material: a paid tier may sell PROGNOS workflow,
+  never CF data, and only after asking Codeforces.
+- Private CF group contests may be invisible to anonymous `user.status`. Test with a group
+  member's API key before Slice 3.
+- Classes capped at 100 members until tech-debt gates D2, D5 and D6 land.
+- Re-scopes "Comparison Mode" (out of scope in requirement.md) as Slice 8, pending D-1. The
+  requirement.md edits are listed in plan §14 and are NOT applied yet.
+- Process note: the community-sentiment research pass hit a rate limit, so dossier §4 was written
+  from its raw notes (8 Codeforces quotes re-verified against saved pages).
+
+**Slices:** 0 Baseline visits [DONE, deploy pending] · 1 Weekly Growth League [TODO] · 2 Assignments [TODO] ·
+3 Contest Day [TODO] · 4 Coach Inbox [TODO] · 5 Feed and peer help [TODO] · 6 Bootcamp structure
+[TODO] · 7 Class Insights [TODO] · 8 Compare and rivals [TODO] · 9 Squads [TODO] · 10 Digest and
+Discord [TODO] · 11 Mobile parity [TODO]
 
 ---
 

@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 import sqlalchemy as sa
 from sqlalchemy import UUID, Boolean, ForeignKey, Integer, String, Text
@@ -155,3 +155,38 @@ class ClassroomLeaderboard(Base):
         nullable=False,
         server_default=sa.text("now()"),
     )
+
+
+class ClassroomDailyVisit(Base):
+    """One row per member per UTC day on which they opened the classroom.
+
+    Classroom v2 Slice 0 (docs/phase_6_0.md): the baseline that later slices are
+    measured against. Written idempotently by the detail and leaderboard reads and
+    never read on a request path. `visit_date` stays UTC for good, so baseline and
+    pilot numbers remain comparable after classrooms gain their own timezone.
+    """
+
+    __tablename__ = "classroom_daily_visits"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "classroom_id", "user_id", "visit_date", name="uq_classroom_daily_visits"
+        ),
+        sa.Index("idx_classroom_daily_visits_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    classroom_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("classrooms.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    visit_date: Mapped[date] = mapped_column(sa.Date, nullable=False)

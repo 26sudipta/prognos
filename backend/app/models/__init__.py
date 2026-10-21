@@ -1,5 +1,11 @@
 from app.models.analytics import Contest, DailyActivity, RatingHistory, Submission, SubmissionTag, TagStats
-from app.models.classroom import Classroom, ClassroomInvite, ClassroomLeaderboard, ClassroomMembership
+from app.models.classroom import (
+    Classroom,
+    ClassroomDailyVisit,
+    ClassroomInvite,
+    ClassroomLeaderboard,
+    ClassroomMembership,
+)
 from app.models.refresh_token import RefreshToken
 from app.models.signals import Recommendation, RecommendationSet, WeaknessSignal
 from app.models.user import User
@@ -22,4 +28,5 @@ __all__ = [
     "ClassroomInvite",
     "ClassroomMembership",
     "ClassroomLeaderboard",
+    "ClassroomDailyVisit",
 ]

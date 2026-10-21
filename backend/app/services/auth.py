@@ -16,7 +16,12 @@ from app.core.security import (
     hash_token,
     refresh_token_expires_at,
 )
-from app.models.classroom import Classroom, ClassroomLeaderboard, ClassroomMembership
+from app.models.classroom import (
+    Classroom,
+    ClassroomDailyVisit,
+    ClassroomLeaderboard,
+    ClassroomMembership,
+)
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -326,5 +331,10 @@ async def soft_delete_user(db: AsyncSession, user_id: str) -> None:
     )
     await db.execute(
         delete(ClassroomMembership).where(ClassroomMembership.user_id == user_id)
+    )
+    # Visit history is personal data too; a student who merely *leaves* a class keeps
+    # theirs (the leave-rate guardrail needs it), but a deleted account takes it along.
+    await db.execute(
+        delete(ClassroomDailyVisit).where(ClassroomDailyVisit.user_id == user_id)
     )
     await db.commit()
