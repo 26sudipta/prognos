@@ -16,17 +16,25 @@ import logging
 import random
 import time
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 import httpx
 from celery import shared_task
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.models.analytics import DailyActivity, RatingHistory, Submission, SubmissionTag, TagStats
+from app.models.analytics import (
+    CfProblem,
+    DailyActivity,
+    RatingHistory,
+    Submission,
+    SubmissionTag,
+    TagStats,
+)
 from app.models.classroom import ClassroomMembership
 from app.models.signals import Recommendation, RecommendationSet, WeaknessSignal, WeaknessSignalType
 from app.models.user_handle import HandleSyncStatus, UserHandle
@@ -36,6 +44,9 @@ logger = logging.getLogger(__name__)
 CF_API_BASE = "https://codeforces.com/api"
 CF_PROBLEMSET_CACHE_KEY = "cf:problemset:all"
 CF_PROBLEMSET_TTL = 3600 * 6  # 6 hours
+# cf_problems is mirrored from the (already cached) problemset at most this often.
+CF_PROBLEMS_REFRESH_EVERY = timedelta(hours=24)
+BACKFILL_PAGE_SIZE = 1000
 
 
 def _make_engine():
@@ -104,11 +115,22 @@ async def _sync_handle_async(handle_id: uuid.UUID) -> dict:
 
         try:
             submissions = await _fetch_submissions(handle.handle, handle_id, session)
+            # Best-effort data fidelity (Classroom v2 Slice 1a). Neither step may fail a
+            # sync: a CF hiccup here is retried on the next sync, nothing is lost.
+            try:
+                await _backfill_participant_types(handle.handle, handle_id, session)
+            except Exception:
+                logger.exception("participant_type backfill failed for handle %s", handle_id)
             await _recompute_daily_activity(handle_id, session)
             await _recompute_tag_stats(handle_id, session)
             await _upsert_rating_history(handle.handle, handle_id, session)
             await _compute_weakness_signals(handle_id, session)
             await _generate_recommendations(handle_id, handle.user_id, session)
+            try:
+                # Runs after recommendations so the problemset is already in memory.
+                await _refresh_cf_problems(session)
+            except Exception:
+                logger.exception("cf_problems refresh failed")
 
             handle.sync_status = HandleSyncStatus.COMPLETED
             handle.last_synced_at = datetime.now(UTC)
@@ -154,6 +176,141 @@ async def _sync_handle_async(handle_id: uuid.UUID) -> dict:
             raise
 
     await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Data fidelity (Classroom v2 Slice 1a, docs/phase_6_1.md)
+# ---------------------------------------------------------------------------
+
+def _chunks(items: list, size: int):
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
+
+
+async def _backfill_participant_types(
+    handle: str, handle_id: uuid.UUID, session: AsyncSession
+) -> int:
+    """Fill `participant_type` / `team_id` on rows ingested before migration 011.
+
+    Incremental sync stops at the newest stored submission, so old rows are never
+    re-read on their own. This re-fetches the handle's full `user.status` once and
+    writes the author fields back by `cf_submission_id`. Rows still NULL afterwards
+    were deleted on CF and get UNKNOWN, which makes the backfill run exactly once.
+
+    All CF calls happen before any write, so a CF failure leaves the rows NULL and
+    the next sync simply tries again. Returns the number of rows that were pending.
+    """
+    pending = await session.scalar(
+        select(func.count())
+        .select_from(Submission)
+        .where(Submission.user_handle_id == handle_id, Submission.participant_type.is_(None))
+    )
+    if not pending:
+        return 0
+
+    by_type: dict[str, list[int]] = defaultdict(list)
+    by_team: dict[int, list[int]] = defaultdict(list)
+    async with httpx.AsyncClient() as client:
+        from_index = 1
+        while True:
+            data = await _cf_get(
+                client, "user.status", handle=handle, from_=from_index, count=BACKFILL_PAGE_SIZE
+            )
+            batch = data["result"]
+            for sub in batch:
+                author = sub.get("author") or {}
+                by_type[author.get("participantType") or "UNKNOWN"].append(sub["id"])
+                if author.get("teamId") is not None:
+                    by_team[author["teamId"]].append(sub["id"])
+            if len(batch) < BACKFILL_PAGE_SIZE:
+                break
+            from_index += BACKFILL_PAGE_SIZE
+            await asyncio.sleep(2)  # CF rate limit
+
+    async with session.begin_nested():
+        for ptype, ids in by_type.items():
+            for chunk in _chunks(ids, 1000):
+                await session.execute(
+                    update(Submission)
+                    .where(
+                        Submission.user_handle_id == handle_id,
+                        Submission.participant_type.is_(None),
+                        Submission.cf_submission_id.in_(chunk),
+                    )
+                    .values(participant_type=ptype)
+                    .execution_options(synchronize_session=False)
+                )
+        for team_id, ids in by_team.items():
+            for chunk in _chunks(ids, 1000):
+                await session.execute(
+                    update(Submission)
+                    .where(
+                        Submission.user_handle_id == handle_id,
+                        Submission.team_id.is_(None),
+                        Submission.cf_submission_id.in_(chunk),
+                    )
+                    .values(team_id=team_id)
+                    .execution_options(synchronize_session=False)
+                )
+        await session.execute(
+            update(Submission)
+            .where(Submission.user_handle_id == handle_id, Submission.participant_type.is_(None))
+            .values(participant_type="UNKNOWN")
+            .execution_options(synchronize_session=False)
+        )
+    await session.commit()
+    logger.info("Backfilled participant_type for %d submissions of handle %s", pending, handle_id)
+    return pending
+
+
+async def _refresh_cf_problems(session: AsyncSession) -> int:
+    """Mirror the CF problemset into `cf_problems`, at most once every 24 h.
+
+    Reuses `_get_cf_problemset()`, which the recommendation step has usually just
+    warmed, so this normally costs no extra CF call. Returns rows upserted, or 0
+    when the catalogue is still fresh.
+    """
+    newest = await session.scalar(select(func.max(CfProblem.updated_at)))
+    if newest is not None and datetime.now(UTC) - newest < CF_PROBLEMS_REFRESH_EVERY:
+        return 0
+
+    problems = await _get_cf_problemset()
+    now = datetime.now(UTC)
+    rows: dict[str, dict] = {}
+    for p in problems:
+        index = p.get("index")
+        if not index:
+            continue
+        contest_id = p.get("contestId")
+        key = f"{contest_id if contest_id is not None else ''}{index}"
+        rows[key] = {
+            "problem_key": key,
+            "contest_id": contest_id,
+            "problem_index": index,
+            "name": (p.get("name") or "")[:500],
+            "rating": p.get("rating"),
+            "tags": p.get("tags") or [],
+            "updated_at": now,
+        }
+
+    async with session.begin_nested():
+        for chunk in _chunks(list(rows.values()), 1000):
+            stmt = pg_insert(CfProblem).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_cf_problems_problem_key",
+                set_={
+                    "contest_id": stmt.excluded.contest_id,
+                    "problem_index": stmt.excluded.problem_index,
+                    "name": stmt.excluded.name,
+                    "rating": stmt.excluded.rating,
+                    "tags": stmt.excluded.tags,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            await session.execute(stmt)
+    await session.commit()
+    logger.info("Refreshed cf_problems: %d problems", len(rows))
+    return len(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +402,7 @@ async def _fetch_submissions(
     stored = 0
     for s in new_submissions:
         prob = s.get("problem", {})
+        author = s.get("author") or {}
         problem_id = f"{prob.get('contestId', '')}{prob.get('index', '')}"
         tags = prob.get("tags", [])
 
@@ -259,6 +417,9 @@ async def _fetch_submissions(
             time_ms=s.get("timeConsumedMillis"),
             memory_kb=s.get("memoryConsumedBytes", 0) // 1024 if s.get("memoryConsumedBytes") else None,
             submitted_at=datetime.fromtimestamp(s["creationTimeSeconds"], tz=UTC),
+            # Never NULL for new rows: NULL is reserved for "pre-011, needs backfill".
+            participant_type=author.get("participantType") or "UNKNOWN",
+            team_id=author.get("teamId"),
         ).on_conflict_do_nothing(index_elements=["user_handle_id", "cf_submission_id"])
 
         result = await session.execute(stmt)

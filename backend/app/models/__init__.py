@@ -1,4 +1,12 @@
-from app.models.analytics import Contest, DailyActivity, RatingHistory, Submission, SubmissionTag, TagStats
+from app.models.analytics import (
+    CfProblem,
+    Contest,
+    DailyActivity,
+    RatingHistory,
+    Submission,
+    SubmissionTag,
+    TagStats,
+)
 from app.models.classroom import (
     Classroom,
     ClassroomDailyVisit,
@@ -24,6 +32,7 @@ __all__ = [
     "RecommendationSet",
     "Recommendation",
     "Contest",
+    "CfProblem",
     "Classroom",
     "ClassroomInvite",
     "ClassroomMembership",

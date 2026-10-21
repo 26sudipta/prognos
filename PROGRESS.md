@@ -1,13 +1,32 @@
 # PROGRESS.md — Implementation Log
 
 ## Current Status: LIVE — outage resolved 2026-10-14; root cause found, prod/test isolation fixed.
-**Last Updated:** 2026-10-21 (Classroom v2 Slice 0 built, awaiting deploy)
+**Last Updated:** 2026-10-21 (Slice 0 live; Slice 1a data fidelity shipped)
 
 ---
 
-## Phase 6.0: Classroom v2 Slice 0, Visit Baseline [DONE: code + tests; deploy pending]
-**Completed:** 2026-10-21. Doc: `docs/phase_6_0.md`. Not yet committed or pushed, and the
-two-week baseline only starts once it's live.
+## Phase 6.1: Classroom v2 Slice 1, Weekly Growth League [IN_PROGRESS]
+Doc: `docs/phase_6_1.md`. 1a ships to `main` (invisible). 1b to 1d build on `feat/classroom-v2`
+and merge after the Phase 6.0 baseline window (two weeks from 2026-10-21).
+
+### 1a Data fidelity [DONE, on main]
+- `backend/alembic/versions/011_submission_participant_type_cf_problems.py`: `submissions.participant_type`,
+  `submissions.team_id`, index `(user_handle_id, submitted_at)`, NEW `cf_problems`
+- `backend/app/workers/cf_sync.py`: ingest keeps `author.participantType` (UNKNOWN if absent) and
+  `author.teamId`; `_backfill_participant_types` (one-off re-fetch, fetch-then-write, NULL to
+  type or UNKNOWN); `_refresh_cf_problems` (daily, reuses the cached problemset)
+- `backend/tests/integration/test_data_fidelity.py`: 6 tests
+- Decisions: ratings are joined from `cf_problems` at rebuild time, never copied onto submissions;
+  no new cron jobs, both steps ride the existing handle sync and can't fail it.
+- Verified: 011 round-trips locally; fresh-DB migrate + `pytest` 170 passed.
+
+### 1b Scoring engine [TODO] · 1c API [TODO] · 1d Web UI [TODO]
+
+---
+
+## Phase 6.0: Classroom v2 Slice 0, Visit Baseline [DONE, live 2026-10-21]
+**Completed:** 2026-10-21. Doc: `docs/phase_6_0.md`. Pushed to `main` (3c351ec); CI green, prod
+healthy. Baseline window runs two weeks from 2026-10-21.
 
 **What was built:**
 - `backend/alembic/versions/010_classroom_daily_visits.py`: NEW table (009 to 010), unique
@@ -65,7 +84,7 @@ two-week baseline only starts once it's live.
 - Process note: the community-sentiment research pass hit a rate limit, so dossier §4 was written
   from its raw notes (8 Codeforces quotes re-verified against saved pages).
 
-**Slices:** 0 Baseline visits [DONE, deploy pending] · 1 Weekly Growth League [TODO] · 2 Assignments [TODO] ·
+**Slices:** 0 Baseline visits [DONE] · 1 Weekly Growth League [IN_PROGRESS] · 2 Assignments [TODO] ·
 3 Contest Day [TODO] · 4 Coach Inbox [TODO] · 5 Feed and peer help [TODO] · 6 Bootcamp structure
 [TODO] · 7 Class Insights [TODO] · 8 Compare and rivals [TODO] · 9 Squads [TODO] · 10 Digest and
 Discord [TODO] · 11 Mobile parity [TODO]

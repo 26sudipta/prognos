@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 import sqlalchemy as sa
 from sqlalchemy import BigInteger, Date, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -16,6 +17,8 @@ class Submission(Base):
     # creates a new handle row). A global unique made the new handle's inserts no-op.
     __table_args__ = (
         UniqueConstraint("user_handle_id", "cf_submission_id", name="uq_submissions_handle_cf_id"),
+        # Weekly league windows scan one handle's submissions by time on every rebuild.
+        sa.Index("idx_submissions_handle_submitted_at", "user_handle_id", "submitted_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -38,6 +41,13 @@ class Submission(Base):
     time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     memory_kb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, index=True)
+    # CF `author.participantType`: CONTESTANT, OUT_OF_COMPETITION, VIRTUAL, PRACTICE or
+    # MANAGER. NULL means "ingested before migration 011, not yet backfilled". UNKNOWN means
+    # the backfill re-fetch no longer found the submission; it scores like PRACTICE.
+    participant_type: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # CF `author.teamId` for ICPC-style team submissions, NULL for individual ones. Team
+    # solves can't be credited to one person, so the league skips their band points.
+    team_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     tags: Mapped[list["SubmissionTag"]] = relationship(
         "SubmissionTag", back_populates="submission", lazy="selectin", cascade="all, delete-orphan"
@@ -151,3 +161,34 @@ class Contest(TimestampMixin, Base):
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     last_synced_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+
+
+class CfProblem(Base):
+    """Local mirror of Codeforces `problemset.problems`, refreshed at most once a day.
+
+    `problem_key` uses the same format as `Submission.problem_id` (contest id + index,
+    e.g. "1903A"), so ratings are joined at rebuild time instead of being copied onto
+    submissions. Gym problems are absent from the problemset and simply stay unrated.
+    """
+
+    __tablename__ = "cf_problems"
+    __table_args__ = (
+        UniqueConstraint("problem_key", name="uq_cf_problems_problem_key"),
+        sa.Index("idx_cf_problems_contest_id", "contest_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    problem_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    contest_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    problem_index: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    solved_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    )
