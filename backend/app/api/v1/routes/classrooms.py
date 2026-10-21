@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
@@ -11,12 +11,15 @@ from app.schemas.classroom import (
     ClassroomResponse,
     ClassroomsListResponse,
     ClassroomSyncResponse,
+    ClassroomUpdateRequest,
     CohortAnalytics,
     InviteListResponse,
     InviteResponse,
     JoinPreviewResponse,
     JoinRequest,
     LeaderboardResponse,
+    LeagueHistoryResponse,
+    LeagueResponse,
     MembersListResponse,
 )
 from app.services.classroom import (
@@ -35,7 +38,9 @@ from app.services.classroom import (
     remove_member,
     revoke_invite,
     sync_classroom,
+    update_classroom,
 )
+from app.services.league import get_league, get_league_history
 
 router = APIRouter(prefix="/classrooms", tags=["classrooms"])
 
@@ -57,7 +62,7 @@ async def create_new_classroom(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ClassroomResponse:
-    return await create_classroom(db, current_user, body.name)
+    return await create_classroom(db, current_user, body.name, timezone=body.timezone)
 
 
 @router.post("/join", response_model=ClassroomResponse, status_code=status.HTTP_201_CREATED)
@@ -87,6 +92,37 @@ async def get_classroom_detail(
     current_user: User = Depends(get_current_user),
 ) -> ClassroomResponse:
     return await get_classroom(db, classroom_id, current_user.id)
+
+
+@router.patch("/{classroom_id}", response_model=ClassroomResponse)
+async def update_classroom_settings(
+    classroom_id: uuid.UUID,
+    body: ClassroomUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ClassroomResponse:
+    """Teacher only: name, timezone, week start, member visibility."""
+    return await update_classroom(db, classroom_id, current_user.id, body)
+
+
+@router.get("/{classroom_id}/league", response_model=LeagueResponse)
+async def get_classroom_league(
+    classroom_id: uuid.UUID,
+    week: str | None = Query(default=None, description="'current' or any date in the week"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LeagueResponse:
+    return await get_league(db, classroom_id, current_user.id, week)
+
+
+@router.get("/{classroom_id}/league/history", response_model=LeagueHistoryResponse)
+async def get_classroom_league_history(
+    classroom_id: uuid.UUID,
+    weeks: int = Query(default=8, ge=1, le=26),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LeagueHistoryResponse:
+    return await get_league_history(db, classroom_id, current_user.id, weeks)
 
 
 @router.delete("/{classroom_id}", status_code=status.HTTP_204_NO_CONTENT)

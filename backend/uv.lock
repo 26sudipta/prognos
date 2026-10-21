@@ -1166,6 +1166,7 @@ dependencies = [
     { name = "redis" },
     { name = "requests" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1194,6 +1195,7 @@ requires-dist = [
     { name = "redis", specifier = ">=6.4.0" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.51" },
+    { name = "tzdata", specifier = ">=2026.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.49.0" },
 ]
 

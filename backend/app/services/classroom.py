@@ -20,12 +20,14 @@ from app.models.classroom import (
     ClassroomLeaderboard,
     ClassroomMembership,
     ClassroomMembershipRole,
+    ClassroomWeeklyScore,
 )
 from app.models.user import User
 from app.models.user_handle import HandleSyncStatus, UserHandle
 from app.schemas.classroom import (
     ClassroomResponse,
     ClassroomSyncResponse,
+    ClassroomUpdateRequest,
     CohortAnalytics,
     CohortMemberAttendance,
     CohortTag,
@@ -38,6 +40,8 @@ from app.schemas.classroom import (
 from app.workers.enqueue import enqueue_sync
 
 INVITE_EXPIRE_DAYS = 7
+# Hard cap until the CF-budget gates (tech-debt D2, D5, D6) land. Teachers count.
+MAX_CLASSROOM_MEMBERS = 100
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -104,20 +108,60 @@ async def _member_count(db: AsyncSession, classroom_id: uuid.UUID) -> int:
     return result.scalar_one()
 
 
-async def _build_classroom_response(
-    db: AsyncSession, classroom: Classroom, user_id: uuid.UUID
-) -> ClassroomResponse:
-    membership = await _assert_member(db, classroom.id, user_id)
-    count = await _member_count(db, classroom.id)
+def _classroom_response(classroom: Classroom, role: str, member_count: int) -> ClassroomResponse:
     return ClassroomResponse(
         id=classroom.id,
         name=classroom.name,
         owner_id=classroom.owner_id,
         is_active=classroom.is_active,
         created_at=classroom.created_at,
-        my_role=membership.role.value,
-        member_count=count,
+        my_role=role,
+        member_count=member_count,
+        timezone=classroom.timezone,
+        week_starts_on=classroom.week_starts_on,
+        member_visibility=classroom.member_visibility,
     )
+
+
+async def _build_classroom_response(
+    db: AsyncSession, classroom: Classroom, user_id: uuid.UUID
+) -> ClassroomResponse:
+    membership = await _assert_member(db, classroom.id, user_id)
+    count = await _member_count(db, classroom.id)
+    return _classroom_response(classroom, membership.role.value, count)
+
+
+def _identity(
+    *,
+    visibility: str,
+    viewer_is_teacher: bool,
+    viewer_id: uuid.UUID,
+    member_id: uuid.UUID,
+    name: str,
+    handle: str | None,
+    avatar_url: str | None,
+    alias_no: int | None,
+) -> tuple[str, str | None, str | None]:
+    """(display name, handle, avatar) as this viewer may see this member.
+
+    In an 'anonymous' class, students see classmates as "Member N" with no handle
+    or avatar. Teachers always see real identities, and everyone sees their own.
+    Ratings and stats stay visible, so this hides who someone is, not how they do.
+    Field shapes never change (an alias is still a string), so old clients parse it.
+    """
+    if visibility != "anonymous" or viewer_is_teacher or member_id == viewer_id:
+        return name, handle, avatar_url
+    alias = f"Member {alias_no}" if alias_no is not None else "Member"
+    return alias, alias if handle is not None else None, None
+
+
+async def _member_meta(
+    db: AsyncSession, classroom_id: uuid.UUID
+) -> dict[uuid.UUID, ClassroomMembership]:
+    rows = await db.execute(
+        select(ClassroomMembership).where(ClassroomMembership.classroom_id == classroom_id)
+    )
+    return {m.user_id: m for m in rows.scalars()}
 
 
 # ── Classroom CRUD ────────────────────────────────────────────────────────────
@@ -139,10 +183,14 @@ async def _require_verified_handle(db: AsyncSession, user_id: uuid.UUID, action:
         )
 
 
-async def create_classroom(db: AsyncSession, user: User, name: str) -> ClassroomResponse:
+async def create_classroom(
+    db: AsyncSession, user: User, name: str, timezone: str | None = None
+) -> ClassroomResponse:
     await _require_verified_handle(db, user.id, "creating")
 
-    classroom = Classroom(name=name.strip(), owner_id=user.id)
+    classroom = Classroom(
+        name=name.strip(), owner_id=user.id, timezone=timezone or "UTC", alias_seq=1
+    )
     db.add(classroom)
     await db.flush()  # get classroom.id before creating membership
 
@@ -151,20 +199,12 @@ async def create_classroom(db: AsyncSession, user: User, name: str) -> Classroom
         user_id=user.id,
         role=ClassroomMembershipRole.TEACHER,
         invite_id=None,
+        alias_no=1,
     )
     db.add(membership)
     await db.commit()
     await db.refresh(classroom)
-
-    return ClassroomResponse(
-        id=classroom.id,
-        name=classroom.name,
-        owner_id=classroom.owner_id,
-        is_active=classroom.is_active,
-        created_at=classroom.created_at,
-        my_role="teacher",
-        member_count=1,
-    )
+    return _classroom_response(classroom, "teacher", 1)
 
 
 async def get_user_classrooms(db: AsyncSession, user_id: uuid.UUID) -> list[ClassroomResponse]:
@@ -182,15 +222,7 @@ async def get_user_classrooms(db: AsyncSession, user_id: uuid.UUID) -> list[Clas
     responses = []
     for membership, classroom in rows:
         count = await _member_count(db, classroom.id)
-        responses.append(ClassroomResponse(
-            id=classroom.id,
-            name=classroom.name,
-            owner_id=classroom.owner_id,
-            is_active=classroom.is_active,
-            created_at=classroom.created_at,
-            my_role=membership.role.value,
-            member_count=count,
-        ))
+        responses.append(_classroom_response(classroom, membership.role.value, count))
     return responses
 
 
@@ -199,6 +231,40 @@ async def get_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid
     response = await _build_classroom_response(db, classroom, user_id)
     await _record_visit(db, classroom_id, user_id)
     return response
+
+
+async def update_classroom(
+    db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID, body: ClassroomUpdateRequest
+) -> ClassroomResponse:
+    """Teacher-only settings change (name, timezone, week start, visibility).
+
+    Changing the timezone or week start moves the week boundaries, so the current
+    `live` league rows no longer line up with any week. They're deleted and the
+    next read rebuilds them on the new boundaries. `final` weeks are history and stay.
+    """
+    classroom = await _get_classroom_or_404(db, classroom_id)
+    await _assert_teacher(db, classroom_id, user_id)
+
+    realign = False
+    if body.name is not None:
+        classroom.name = body.name
+    if body.timezone is not None and body.timezone != classroom.timezone:
+        classroom.timezone = body.timezone
+        realign = True
+    if body.week_starts_on is not None and body.week_starts_on != classroom.week_starts_on:
+        classroom.week_starts_on = body.week_starts_on
+        realign = True
+    if body.member_visibility is not None:
+        classroom.member_visibility = body.member_visibility
+    if realign:
+        await db.execute(
+            delete(ClassroomWeeklyScore).where(
+                ClassroomWeeklyScore.classroom_id == classroom_id,
+                ClassroomWeeklyScore.status == "live",
+            )
+        )
+    await db.commit()
+    return await _build_classroom_response(db, classroom, user_id)
 
 
 async def delete_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID) -> None:
@@ -212,6 +278,9 @@ async def delete_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: u
     await db.execute(delete(ClassroomInvite).where(ClassroomInvite.classroom_id == classroom_id))
     await db.execute(
         delete(ClassroomDailyVisit).where(ClassroomDailyVisit.classroom_id == classroom_id)
+    )
+    await db.execute(
+        delete(ClassroomWeeklyScore).where(ClassroomWeeklyScore.classroom_id == classroom_id)
     )
     classroom.is_active = False
     await db.commit()
@@ -319,7 +388,18 @@ async def join_classroom(db: AsyncSession, token: str, user: User) -> ClassroomR
     # 3. Require verified handle
     await _require_verified_handle(db, user.id, "joining")
 
-    # 4. Check not already a member
+    # 4. Serialize joins per classroom: alias numbers are max + 1 and the member cap
+    #    is a count, so concurrent joins must not both read the same state.
+    classroom = (
+        await db.execute(
+            select(Classroom)
+            .where(Classroom.id == classroom.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+
+    # 5. Check not already a member
     existing = await db.execute(
         select(ClassroomMembership).where(
             ClassroomMembership.classroom_id == classroom.id,
@@ -332,12 +412,22 @@ async def join_classroom(db: AsyncSession, token: str, user: User) -> ClassroomR
             detail="You're already a member of this classroom",
         )
 
-    # 5. Create membership (unique constraint guards against concurrent joins)
+    # 6. Enforce the member cap
+    if await _member_count(db, classroom.id) >= MAX_CLASSROOM_MEMBERS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This classroom is full ({MAX_CLASSROOM_MEMBERS} members).",
+        )
+
+    # 7. Create membership (unique constraint guards against concurrent joins)
+    classroom.alias_seq += 1
+    next_alias = classroom.alias_seq
     membership = ClassroomMembership(
         classroom_id=classroom.id,
         user_id=user.id,
         role=ClassroomMembershipRole.STUDENT,
         invite_id=invite.id,
+        alias_no=next_alias,
     )
     db.add(membership)
     try:
@@ -350,22 +440,15 @@ async def join_classroom(db: AsyncSession, token: str, user: User) -> ClassroomR
         )
 
     count = await _member_count(db, classroom.id)
-    return ClassroomResponse(
-        id=classroom.id,
-        name=classroom.name,
-        owner_id=classroom.owner_id,
-        is_active=classroom.is_active,
-        created_at=classroom.created_at,
-        my_role="student",
-        member_count=count,
-    )
+    return _classroom_response(classroom, "student", count)
 
 
 # ── Members ───────────────────────────────────────────────────────────────────
 
 async def list_members(db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID) -> list[MemberResponse]:
-    await _get_classroom_or_404(db, classroom_id)
-    await _assert_member(db, classroom_id, user_id)
+    classroom = await _get_classroom_or_404(db, classroom_id)
+    viewer = await _assert_member(db, classroom_id, user_id)
+    viewer_is_teacher = viewer.role == ClassroomMembershipRole.TEACHER
 
     result = await db.execute(
         select(ClassroomMembership, User)
@@ -386,11 +469,21 @@ async def list_members(db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.
             )
         )
         cf_handle = handle_result.scalar_one_or_none()
+        name, handle, avatar = _identity(
+            visibility=classroom.member_visibility,
+            viewer_is_teacher=viewer_is_teacher,
+            viewer_id=user_id,
+            member_id=user.id,
+            name=user.name,
+            handle=cf_handle,
+            avatar_url=user.avatar_url,
+            alias_no=membership.alias_no,
+        )
         members.append(MemberResponse(
             user_id=user.id,
-            user_name=user.name,
-            avatar_url=user.avatar_url,
-            cf_handle=cf_handle,
+            user_name=name,
+            avatar_url=avatar,
+            cf_handle=handle,
             role=membership.role.value,
             joined_at=membership.joined_at,
         ))
@@ -427,6 +520,13 @@ async def remove_member(
             ClassroomLeaderboard.user_id == target_user_id,
         )
     )
+    # Their league rows go too, final weeks included: leaving means leaving the board.
+    await db.execute(
+        delete(ClassroomWeeklyScore).where(
+            ClassroomWeeklyScore.classroom_id == classroom_id,
+            ClassroomWeeklyScore.user_id == target_user_id,
+        )
+    )
     await db.commit()
 
 
@@ -454,6 +554,13 @@ async def leave_classroom(db: AsyncSession, classroom_id: uuid.UUID, user_id: uu
         delete(ClassroomLeaderboard).where(
             ClassroomLeaderboard.classroom_id == classroom_id,
             ClassroomLeaderboard.user_id == user_id,
+        )
+    )
+    # Their league rows go too, final weeks included: leaving means leaving the board.
+    await db.execute(
+        delete(ClassroomWeeklyScore).where(
+            ClassroomWeeklyScore.classroom_id == classroom_id,
+            ClassroomWeeklyScore.user_id == user_id,
         )
     )
     await db.commit()
@@ -586,19 +693,31 @@ async def get_leaderboard(
     db: AsyncSession, classroom_id: uuid.UUID, user_id: uuid.UUID
 ) -> LeaderboardResponse:
     classroom = await _get_classroom_or_404(db, classroom_id)
-    await _assert_member(db, classroom_id, user_id)
+    viewer = await _assert_member(db, classroom_id, user_id)
 
     member_count = await _member_count(db, classroom_id)
     rows = await _ensure_leaderboard(db, classroom_id, member_count)
+    meta = await _member_meta(db, classroom_id)
+    viewer_is_teacher = viewer.role == ClassroomMembershipRole.TEACHER
 
     entries = []
     for rank, row in enumerate(rows, start=1):
+        name, handle, avatar = _identity(
+            visibility=classroom.member_visibility,
+            viewer_is_teacher=viewer_is_teacher,
+            viewer_id=user_id,
+            member_id=row.user_id,
+            name=row.user_name,
+            handle=row.cf_handle,
+            avatar_url=row.avatar_url,
+            alias_no=meta[row.user_id].alias_no if row.user_id in meta else None,
+        )
         entries.append(LeaderboardEntry(
             rank=rank,
             user_id=row.user_id,
-            cf_handle=row.cf_handle,
-            user_name=row.user_name,
-            avatar_url=row.avatar_url,
+            cf_handle=handle,
+            user_name=name,
+            avatar_url=avatar,
             cf_rating=row.cf_rating,
             solved_count=row.solved_count,
             current_streak=row.current_streak,

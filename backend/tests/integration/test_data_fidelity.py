@@ -66,15 +66,23 @@ async def _subs(db, handle_id):
 async def _seed_old_rows(db, handle_id, cf_ids):
     """Rows as they looked before migration 011: no participant type."""
     for cf_id in cf_ids:
-        await db.execute(pg_insert(Submission).values(
-            user_handle_id=handle_id, cf_submission_id=cf_id, problem_id="1903A",
-            problem_name="Odd One Out", contest_id=1903, verdict="OK", lang="C++20",
-            submitted_at=datetime.now(UTC),
-        ))
+        await db.execute(
+            pg_insert(Submission).values(
+                user_handle_id=handle_id,
+                cf_submission_id=cf_id,
+                problem_id="1903A",
+                problem_name="Odd One Out",
+                contest_id=1903,
+                verdict="OK",
+                lang="C++20",
+                submitted_at=datetime.now(UTC),
+            )
+        )
     await db.commit()
 
 
 # ── Ingest ────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_ingest_stores_participant_type_and_team(db_session, handle):
@@ -84,13 +92,14 @@ async def test_ingest_stores_participant_type_and_team(db_session, handle):
 
     assert stored == 3
     assert await _subs(db_session, handle.id) == [
-        (101, "UNKNOWN", None),   # missing author field never leaves a NULL behind
+        (101, "UNKNOWN", None),  # missing author field never leaves a NULL behind
         (102, "PRACTICE", 77),
         (103, "CONTESTANT", None),
     ]
 
 
 # ── Backfill ──────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_backfill_fills_old_rows_and_marks_vanished_ones(db_session, handle):
@@ -105,7 +114,7 @@ async def test_backfill_fills_old_rows_and_marks_vanished_ones(db_session, handl
     assert await _subs(db_session, handle.id) == [
         (1, "CONTESTANT", None),
         (2, "VIRTUAL", 5),
-        (3, "UNKNOWN", None),     # deleted on CF: resolved once, never re-fetched
+        (3, "UNKNOWN", None),  # deleted on CF: resolved once, never re-fetched
     ]
 
     # Second run: nothing pending, so no CF traffic at all.
@@ -128,7 +137,7 @@ async def test_backfill_leaves_rows_null_when_cf_fails(db_session, handle):
 @pytest.mark.asyncio
 async def test_backfill_pages_through_long_histories(db_session, handle):
     await _seed_old_rows(db_session, handle.id, [1, 1500])
-    page1 = [_cf_sub(i, "PRACTICE") for i in range(2000, 1000, -1)]   # exactly 1000 rows
+    page1 = [_cf_sub(i, "PRACTICE") for i in range(2000, 1000, -1)]  # exactly 1000 rows
     page2 = [_cf_sub(1000 - i, "CONTESTANT") for i in range(0, 999)] + [_cf_sub(1, "CONTESTANT")]
     cf = AsyncMock(side_effect=[{"result": page1}, {"result": page2[:500]}])
     no_sleep = patch("app.workers.cf_sync.asyncio.sleep", AsyncMock())
@@ -138,14 +147,14 @@ async def test_backfill_pages_through_long_histories(db_session, handle):
     assert cf.await_count == 2
     rows = dict((cf_id, ptype) for cf_id, ptype, _ in await _subs(db_session, handle.id))
     assert rows[1500] == "PRACTICE"
-    assert rows[1] == "UNKNOWN"   # id 1 sat beyond the second (short) page
+    assert rows[1] == "UNKNOWN"  # id 1 sat beyond the second (short) page
 
 
 # ── cf_problems catalogue ─────────────────────────────────────────────────────
 
 PROBLEMS = [
     {"contestId": 1903, "index": "A", "name": "Odd One Out", "rating": 800, "tags": ["math"]},
-    {"contestId": 1903, "index": "F2", "name": "Hard Version", "tags": ["dp"]},   # not rated yet
+    {"contestId": 1903, "index": "F2", "name": "Hard Version", "tags": ["dp"]},  # not rated yet
 ]
 
 
@@ -165,7 +174,7 @@ async def test_refresh_cf_problems_upserts_then_skips_while_fresh(db_session, em
     fetch = AsyncMock(return_value=PROBLEMS)
     with patch("app.workers.cf_sync._get_cf_problemset", fetch):
         assert await _refresh_cf_problems(db_session) == 2
-        assert await _refresh_cf_problems(db_session) == 0   # within 24 h: no work
+        assert await _refresh_cf_problems(db_session) == 0  # within 24 h: no work
     fetch.assert_awaited_once()
 
     rows = {r.problem_key: r for r in (await db_session.execute(select(CfProblem))).scalars()}
@@ -190,7 +199,8 @@ async def test_refresh_cf_problems_picks_up_late_ratings(db_session, empty_catal
 
     row = (
         await db_session.execute(
-            select(CfProblem).where(CfProblem.problem_key == "1903F2")
+            select(CfProblem)
+            .where(CfProblem.problem_key == "1903F2")
             .execution_options(populate_existing=True)
         )
     ).scalar_one()

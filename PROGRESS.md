@@ -20,7 +20,21 @@ and merge after the Phase 6.0 baseline window (two weeks from 2026-10-21).
   no new cron jobs, both steps ride the existing handle sync and can't fail it.
 - Verified: 011 round-trips locally; fresh-DB migrate + `pytest` 170 passed.
 
-### 1b Scoring engine [TODO] · 1c API [TODO] · 1d Web UI [TODO]
+### 1b Scoring engine [DONE, on feat/classroom-v2]
+- Migration 012 (class timezone, week start, visibility, alias_no + alias_seq counter,
+  classroom_weekly_scores); `services/league_rules.py` (pure rules); `workers/league_sync.py`;
+  tzdata dependency. 50 unit + 9 integration tests.
+- Deviations (doc §4): 48 h finalization (plan said 6 h) so weekend-contest problem ratings land;
+  alias counter so aliases are never reused; no live multiplier on warm-ups; unrated solves count
+  as solve days; a contest counts in the week it started.
+
+### 1c API [DONE, on feat/classroom-v2]
+- `PATCH /classrooms/{id}`, `GET /classrooms/{id}/league`, `GET /classrooms/{id}/league/history`;
+  anonymous masking on league, leaderboard and members (shapes unchanged for the shipped app);
+  100-member cap and alias assignment under a classroom row lock; league rows removed on
+  leave/remove/delete/account deletion. 17 integration tests. Fresh-DB pytest: 246 passed.
+
+### 1d Web UI [TODO]
 
 ---
 

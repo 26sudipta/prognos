@@ -13,6 +13,7 @@ from app.models.classroom import (
     ClassroomInvite,
     ClassroomLeaderboard,
     ClassroomMembership,
+    ClassroomWeeklyScore,
 )
 from app.models.refresh_token import RefreshToken
 from app.models.signals import Recommendation, RecommendationSet, WeaknessSignal
@@ -38,4 +39,5 @@ __all__ = [
     "ClassroomMembership",
     "ClassroomLeaderboard",
     "ClassroomDailyVisit",
+    "ClassroomWeeklyScore",
 ]

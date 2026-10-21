@@ -136,4 +136,179 @@ the first sync of the day logs `Refreshed cf_problems: ~11000 problems`.
 
 ---
 
-*Parts 1b (scoring engine), 1c (API) and 1d (web UI) are added below as they land.*
+## Part 1b: Scoring Engine
+
+### What Was Built
+
+```
+backend/
+├── alembic/versions/
+│   └── 012_classroom_league.py       ← NEW (011 → 012): class settings, alias numbers,
+│                                       alias counter, classroom_weekly_scores
+├── pyproject.toml / uv.lock          ← tzdata (IANA zones inside slim containers)
+├── app/
+│   ├── models/classroom.py           ← Classroom.timezone/week_starts_on/member_visibility/
+│   │                                   alias_seq; ClassroomMembership.alias_no;
+│   │                                   NEW ClassroomWeeklyScore
+│   ├── services/league_rules.py      ← NEW: pure Growth Points rules, no I/O
+│   └── workers/
+│       ├── league_sync.py            ← NEW: rebuild_league (gathers inputs, writes rows)
+│       └── classroom_sync.py         ← the leaderboard task also rebuilds the league
+└── tests/
+    ├── unit/test_league_rules.py     ← NEW, 50 tests
+    └── integration/test_league_rebuild.py ← NEW, 9 tests
+```
+
+### Concepts Explained
+
+#### 1. Pure rules, thin worker
+
+Every number in plan §5 lives in `league_rules.py` as a constant or a pure function: bands,
+reference level, week windows, brackets, ranks, and `score_week`. Nothing there touches the
+database or reads the clock. That split pays off three ways:
+
+- **Each rule is a one-line unit test.** The band boundaries at −301/−300 or the DST weeks don't
+  need a database to check.
+- **Tuning is safe.** Change a constant, bump `SCORING_VERSION`, and every new row records which
+  rules produced it.
+- **The worker stays boring.** `league_sync.py` only gathers inputs with four queries, calls the
+  rules, and upserts the results.
+
+#### 2. Four queries per rebuild, whatever the class size
+
+| Query | What it fetches | Why |
+|---|---|---|
+| Students and handles | user → the **one** active verified handle | Re-verified users have an old inactive handle with the same submissions. Counting both doubled their points, and a test pins this |
+| Rating history | (contest, rating after it, time) | Levels, and which contests were rated |
+| First solves | `DISTINCT ON (handle, problem)` over individual ACs, left-joined to `cf_problems` | "First-ever" plus difficulty in one pass. Ratings come from the catalogue *now*, so a late CF rating rescores on the next build |
+| Participations | Live and virtual submissions grouped per contest | Contest bonuses and upsolve detection |
+
+Team ACs are excluded from the first-solve query entirely, so a later solo solve of a problem
+first cracked with a team still scores. Team submissions still count as participation.
+
+#### 3. What freezes, and when it un-freezes
+
+| Value | Frozen when | Why |
+|---|---|---|
+| `ref_rating` | First build of the week | A Wednesday rating jump must not move the goalposts mid-race |
+| `bracket` | First build of the week | Brackets are cut by level, so they freeze with it. Mid-week joiners go to the nearest existing bracket |
+| GP, ranks | Never while `live` | Late syncs and late problem ratings keep improving accuracy |
+| Everything | `final` | After the grace period the row never changes again |
+
+#### 4. Deviations from the plan, and why
+
+| Plan said | Built | Reason |
+|---|---|---|
+| Finalize 6 h after the week closes | **48 h** | Many CF rounds run on weekends, and Codeforces rates new problems a day or more after a round. With 6 h, Sunday contest solves would be frozen at the flat "unrated" 2 GP. 48 h lets those ratings arrive, and the UI shows the closed week as "finalizing" until then |
+| Alias = max(alias) + 1 at join | A per-class counter, `classrooms.alias_seq` | With max + 1, a newcomer inherits the alias of someone who just left, so "Member 3" silently becomes a different person. The counter only grows. A test pins it |
+| Live multiplier on every band | Not on warm-ups | A live 800 problem for a 1600 student isn't contest evidence of anything. Warm-ups stay 1 GP, capped at 10 |
+| Solve day needs an AC at Δ ≥ −300 | Unrated solves count too | Gym training is real practice, and it has no CF rating to compare against |
+| (unspecified) | A contest counts in the week it **started** | A round running past midnight at the week boundary would otherwise count twice |
+| (unspecified) | Upsolve = a practice AC *after* your last contest submission, within 14 days | Practice solves made before a virtual of the same contest are not upsolves |
+
+#### 5. Rebuild triggers on the free tier
+
+There's no broker in production, so the same three triggers as the leaderboard apply. The
+read path (`_ensure_league`, Part 1c) rebuilds when the current week has no rows, is older than
+10 minutes, is behind a member's newer sync, or holds a week due to finalize. On deployments
+with Celery, the existing per-classroom leaderboard task rebuilds the league too. That reuses
+one enqueue instead of adding a second `.delay()` per classroom.
+
+#### 6. Timezones need data
+
+`zoneinfo` reads the system timezone database, and `python:3.12-slim` doesn't promise one. The
+`tzdata` package is now a direct dependency, so `ZoneInfo("Asia/Dhaka")` works in any container.
+`is_valid_timezone()` checks names against what the server can actually load.
+
+## Part 1c: API
+
+### What Was Built
+
+```
+backend/app/
+├── schemas/classroom.py          ← ClassroomUpdateRequest, ClassroomCreateRequest.timezone,
+│                                   ClassroomResponse += timezone/week_starts_on/
+│                                   member_visibility, League* response models
+├── services/
+│   ├── classroom.py              ← _classroom_response, _identity (anonymous mode),
+│   │                               update_classroom, 100-member cap, alias at join,
+│   │                               league rows removed on leave/remove/delete
+│   ├── league.py                 ← NEW: get_league, get_league_history, _ensure_league
+│   └── auth.py                   ← account deletion also drops league rows
+└── api/v1/routes/classrooms.py   ← PATCH /{id}, GET /{id}/league, GET /{id}/league/history
+backend/tests/integration/test_league_api.py   ← NEW, 17 tests
+```
+
+| Method and path | Who | Notes |
+|---|---|---|
+| `GET /classrooms/{id}/league?week=current\|YYYY-MM-DD` | Members | Any date selects its week. A bad value returns 422 |
+| `GET /classrooms/{id}/league/history?weeks=8` | Members | `class_median` goes to teachers only |
+| `PATCH /classrooms/{id}` | Teacher | `name`, `timezone`, `week_starts_on`, `member_visibility`. Unknown zone or day returns 422 |
+| `POST /classrooms` | Verified user | Optional `timezone`, sent from the browser |
+
+### Concepts Explained
+
+#### 7. Students see their own bracket, teachers see the class
+
+| Field | Student | Teacher |
+|---|---|---|
+| `brackets` | Only their own | All |
+| `me` | GP, rank, level, breakdown, 4-week average, best week, next target, ties | `null`, since teachers aren't in the league |
+| Entry `ref_rating` | `null` | Shown, so a coach can see levels |
+| `pulse` | `null` | Active, median, stretch solves, contests, last week's values, quiet members |
+| `suggestions` | 3 recommendations priced in GP for *their* level | Empty |
+| History `class_median` | `null` | Shown |
+
+The per-viewer shaping happens on the server, so a curious student can't read other brackets
+from the network tab.
+
+#### 8. Anonymous mode masks values, never shapes
+
+`_identity()` decides what a viewer may see of a member, and every endpoint returning classmates
+uses it: league, leaderboard and members. In an anonymous class, students see "Member 7" with no
+handle or avatar. Teachers and the member themself always see the real identity. Field names and
+types never change, since an alias is still a string, and a test pins the old response keys, so
+the Android app already on phones keeps parsing. Real user ids stay in responses: both clients
+use them only as list keys and for the teacher-only remove action. "Anonymous" hides who
+someone is. It doesn't hide how they're doing.
+
+#### 9. API additions from the UI research
+
+The UI research pass asked for a few fields the plan didn't list, so the screen never has to
+guess: `tied_with`, `is_me`, `weeks_counted`, `best_week_gp`, a nullable 4-week average, and
+`bracket` / `last_active_at` on the quiet-members list.
+
+#### 10. Changing the clock re-cuts the week
+
+A new timezone or week start moves the week boundaries, so `live` rows no longer line up with
+any week. `update_classroom` deletes them, and the next read rebuilds on the new boundaries.
+`final` rows are history and stay untouched.
+
+#### 11. The member cap is enforced under a lock
+
+Joining now locks the classroom row (`SELECT ... FOR UPDATE`), then checks the 100-member cap and
+takes the next alias. Two simultaneous joins can't both see "99 members" or the same alias. The
+cap holds until the CF-budget gates (tech-debt D2, D5, D6) land.
+
+### Verification (1b and 1c)
+
+```bash
+cd backend
+.venv/bin/python -m pytest tests/unit/test_league_rules.py -q            # → 50 passed
+.venv/bin/python -m pytest tests/integration/test_league_rebuild.py -q    # → 9 passed
+.venv/bin/python -m pytest tests/integration/test_league_api.py -q        # → 17 passed
+.venv/bin/python -m pytest -q                                             # → 246 passed
+```
+
+### Key Takeaways (1b and 1c)
+
+- **Keep scoring pure.** Rules without I/O are cheap to test, safe to tune, and easy to explain.
+- **Freeze inputs, not outputs.** Level and bracket lock for the week. Points keep improving until
+  the week finalizes.
+- **Pick grace periods from the data's real latency.** CF problem ratings arrive in about a day, not hours.
+- **Per-viewer shaping belongs on the server.** Privacy rules enforced in the UI aren't rules.
+- **Counters, not maxima, for identifiers that must never be reused.**
+
+---
+
+*Part 1d (web UI) is added below when it lands.*

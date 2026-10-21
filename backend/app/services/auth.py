@@ -21,6 +21,7 @@ from app.models.classroom import (
     ClassroomDailyVisit,
     ClassroomLeaderboard,
     ClassroomMembership,
+    ClassroomWeeklyScore,
 )
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -336,5 +337,8 @@ async def soft_delete_user(db: AsyncSession, user_id: str) -> None:
     # theirs (the leave-rate guardrail needs it), but a deleted account takes it along.
     await db.execute(
         delete(ClassroomDailyVisit).where(ClassroomDailyVisit.user_id == user_id)
+    )
+    await db.execute(
+        delete(ClassroomWeeklyScore).where(ClassroomWeeklyScore.user_id == user_id)
     )
     await db.commit()

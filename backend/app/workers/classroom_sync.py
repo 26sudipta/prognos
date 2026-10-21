@@ -130,6 +130,13 @@ async def _rebuild_async(classroom_id: uuid.UUID) -> dict:
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         updated = await rebuild_leaderboard(session, classroom_id)
+        # One enqueue per classroom covers both caches (broker deployments only; the
+        # free tier rebuilds the league on read instead).
+        from app.workers.league_sync import rebuild_league
+        try:
+            await rebuild_league(session, classroom_id)
+        except Exception:
+            logger.exception("league rebuild failed for classroom %s", classroom_id)
     await engine.dispose()
     return {"classroom_id": str(classroom_id), "updated": updated}
 

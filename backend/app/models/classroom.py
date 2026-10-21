@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 
 import sqlalchemy as sa
-from sqlalchemy import UUID, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import UUID, Boolean, ForeignKey, Integer, SmallInteger, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,12 @@ class ClassroomMembershipRole(str, enum.Enum):
 
 class Classroom(TimestampMixin, Base):
     __tablename__ = "classrooms"
+    __table_args__ = (
+        sa.CheckConstraint("week_starts_on BETWEEN 0 AND 6", name="ck_classrooms_week_starts_on"),
+        sa.CheckConstraint(
+            "member_visibility IN ('full', 'anonymous')", name="ck_classrooms_member_visibility"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -37,6 +43,16 @@ class Classroom(TimestampMixin, Base):
     last_bulk_sync_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=True
     )
+    # IANA zone the class's weeks and solve days follow (Classroom v2, Slice 1).
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, server_default="UTC")
+    # 0 = Monday ... 6 = Sunday, matching date.weekday().
+    week_starts_on: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+    # 'full': classmates see names, handles, avatars. 'anonymous': students see aliases.
+    member_visibility: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="full"
+    )
+    # Last alias number handed out. Only grows, so "Member 7" is never a second person.
+    alias_seq: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
 
 class ClassroomInvite(Base):
@@ -76,6 +92,7 @@ class ClassroomMembership(Base):
     __tablename__ = "classroom_memberships"
     __table_args__ = (
         sa.UniqueConstraint("classroom_id", "user_id", name="uq_classroom_memberships"),
+        sa.UniqueConstraint("classroom_id", "alias_no", name="uq_classroom_memberships_alias"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -113,6 +130,9 @@ class ClassroomMembership(Base):
         nullable=False,
         server_default=sa.text("now()"),
     )
+    # Stable per-class number behind the "Member 7" alias in anonymous classes.
+    # Taken from classrooms.alias_seq under a row lock at join, never reused.
+    alias_no: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class ClassroomLeaderboard(Base):
@@ -190,3 +210,54 @@ class ClassroomDailyVisit(Base):
         nullable=False,
     )
     visit_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+
+
+class ClassroomWeeklyScore(Base):
+    """One student's Growth Points for one week in one classroom (the league cache).
+
+    Written only by `app.workers.league_sync`. `ref_rating` and `bracket` are frozen
+    at the first build of the week. `status` flips from 'live' to 'final' once the
+    week is past its grace period, after which the row never changes.
+    """
+
+    __tablename__ = "classroom_weekly_scores"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "classroom_id", "user_id", "week_start", name="uq_classroom_weekly_scores"
+        ),
+        sa.CheckConstraint("status IN ('live', 'final')", name="ck_classroom_weekly_scores_status"),
+        sa.Index("idx_classroom_weekly_scores_week", "classroom_id", "week_start", "bracket"),
+        sa.Index("idx_classroom_weekly_scores_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    classroom_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("classrooms.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    week_start: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    ref_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    bracket: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    growth_points: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    stretch_solves: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    breakdown: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+    )
+    rank_in_bracket: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(8), nullable=False, server_default="live")
+    scoring_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )

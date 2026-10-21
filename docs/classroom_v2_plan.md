@@ -540,6 +540,9 @@ Ship it, then wait two weeks before Slice 1 reaches users, so there's a baseline
 
 ### 10.1 Slice 1 goal and build order
 
+> **Built in `docs/phase_6_1.md`.** Deviations from this design (48 h finalization, an alias
+> counter, warm-up and contest-boundary rules) are recorded there with their reasons.
+
 **Goal:** replace the all-time rating table as the classroom's front page with a weekly,
 level-fair race among near peers. Later slices build on its data.
 
